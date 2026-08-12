@@ -392,8 +392,10 @@ export default function App({
       Notification.requestPermission().catch(() => {});
   }, [mail.configured]);
 
-  const saveOrg = async (patch) => {
-    const { orgs } = await api.updateOrg(org.id, patch);
+  /* Admin-gated on the server: the credentials ride in the same request and
+     are verified there — a wrong pair throws back into the form's error box. */
+  const saveOrg = async (patch, admin) => {
+    const { orgs } = await api.updateOrg(org.id, { ...patch, ...admin });
     onOrgUpdated(orgs);
     setOrgSettings(false);
     flash("Organization updated");

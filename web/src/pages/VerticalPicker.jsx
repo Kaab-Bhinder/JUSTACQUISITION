@@ -7,6 +7,7 @@ import { S, CSS, orgVars } from "../theme.js";
 import { OrgMark } from "../components/OrgMark.jsx";
 import { brandTokens, rgba } from "../domain/colour.js";
 import { ConfirmDelete } from "../components/ConfirmDelete.jsx";
+import { OrgForm } from "../components/OrgForm.jsx";
 
 /* ----------------------------------------------------------------------
    Vertical picker — inside one organization
@@ -173,11 +174,12 @@ function AddDialog({ taken, busy, onCreate, onCancel }) {
 }
 
 export function VerticalPicker({
-  org, verticals, theme, onToggleTheme, onOpen, onCreate, onLeave, onDelete,
+  org, verticals, theme, onToggleTheme, onOpen, onCreate, onLeave, onDelete, onSaveOrg,
 }) {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toDelete, setToDelete] = useState(null);   // the vertical a card asked about
+  const [editingOrg, setEditingOrg] = useState(false);
 
   const create = async (payload) => {
     setBusy(true);
@@ -201,6 +203,14 @@ export function VerticalPicker({
           <div style={S.lpLogoName}>{org.name}</div>
         </div>
         <div style={S.lpNavRight}>
+          {/* Admin territory: the server wants the administrator credentials
+              before it changes anything about the organization itself. */}
+          <button className="lp-icon-btn" style={{ ...S.lpIconBtn, width: "auto",
+            padding: "0 12px", gap: 6, fontSize: 12.5, fontWeight: 700 }}
+            onClick={() => setEditingOrg(true)}
+            title="Name, brand, colour — asks for the administrator credentials">
+            <Settings2 size={14} /> Edit organization
+          </button>
           <button className="lp-icon-btn" style={S.lpIconBtn} onClick={onToggleTheme}
             title={theme === "dark" ? "Switch to light" : "Switch to dark"}
             aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
@@ -259,6 +269,15 @@ export function VerticalPicker({
       {adding && (
         <AddDialog taken={verticals} busy={busy}
           onCreate={create} onCancel={() => setAdding(false)} />
+      )}
+
+      {editingOrg && (
+        <OrgForm org={org}
+          onSave={async (payload, admin) => {
+            await onSaveOrg(payload, admin);
+            setEditingOrg(false);
+          }}
+          onCancel={() => setEditingOrg(false)} />
       )}
 
       {toDelete && (

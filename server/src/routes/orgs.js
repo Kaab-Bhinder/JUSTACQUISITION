@@ -158,16 +158,16 @@ orgs.post("/", requireAdmin, async (req, res, next) => {
 
 /* ---- one organization --------------------------------------------------
    The org is named in the path and again in the X-Org-Id header, so the client
-   sends both and they must agree. Editing branding is not gated: it changes
-   how one tenant looks, not what the installation contains, and everything
-   else inside a tenant is open too. */
+   sends both and they must agree. Editing is admin-gated like create and
+   delete: an organization's identity — its name, its brand — is owned by the
+   administrator, not by whoever happens to be working a pipeline in it. */
 
 const sameOrg = (req, res, next) =>
   req.params.id === req.orgId
     ? next()
     : res.status(400).json({ error: "That organization doesn't match the one you're working in." });
 
-orgs.patch("/:id", requireOrg, sameOrg, async (req, res, next) => {
+orgs.patch("/:id", requireOrg, sameOrg, requireAdmin, async (req, res, next) => {
   try {
     const b = req.body || {};
     const sets = [], vals = [];

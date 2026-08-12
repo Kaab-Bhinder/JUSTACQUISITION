@@ -238,7 +238,11 @@ export default function Root() {
         theme={theme} onToggleTheme={toggleTheme}
         onOpen={openVertical} onCreate={createVertical}
         onLeave={leaveOrg}
-        onDelete={deleteVerticalCard} />
+        onDelete={deleteVerticalCard}
+        onSaveOrg={async (patch, admin) => {
+          const { orgs: list } = await api.updateOrg(orgId, { ...patch, ...admin });
+          setOrgs(list);
+        }} />
     );
   }
 

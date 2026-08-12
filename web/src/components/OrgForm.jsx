@@ -164,10 +164,10 @@ export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
   const mark = (f.mark || initials(f.name) || "?").slice(0, 2).toUpperCase();
 
   const clash = !editing && taken.includes(id);
-  /* Editing needs no credentials — it changes how one tenant looks, not what
-     the installation contains. Creating does. */
-  const adminReady = editing ||
-    (admin.adminEmail.trim().length > 0 && admin.adminPassword.length > 0);
+  /* Creating AND editing need the administrator credentials: an
+     organization's identity belongs to the administrator, and the server
+     enforces it either way. */
+  const adminReady = admin.adminEmail.trim().length > 0 && admin.adminPassword.length > 0;
   const ready = f.name.trim().length > 0 && adminReady &&
     (editing || (id.length >= 2 && !clash));
 
@@ -186,7 +186,7 @@ export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
     if (!editing) payload.id = id;
     /* Credentials travel as a second argument, never merged into the record,
        so there is no path by which they could be stored on the organization. */
-    Promise.resolve(editing ? onSave(payload) : onSave(payload, { ...admin }))
+    Promise.resolve(onSave(payload, { ...admin }))
       .catch(err => setError(err.message));
   };
 
@@ -318,18 +318,15 @@ export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
               Last, because it is the price of the form rather than part of the
               thing being described, and asking for a password before anything
               has been filled in reads as a login. */}
-          {!editing && (
-            <>
+          <>
               <div style={{ ...S.sectionTitle, marginTop: 26 }}>
                 <ShieldCheck size={12} style={{ verticalAlign: -2, marginRight: 6 }} />
                 Administrator
               </div>
               <p style={{ ...S.auHint, marginTop: -4, marginBottom: 14 }}>
-                Opening an organization needs nothing. Creating one changes what this
-                installation contains, so it asks for the credentials set as{" "}
-                <code style={S.code}>ADMIN_EMAIL</code> and{" "}
-                <code style={S.code}>ADMIN_PASSWORD</code> in <code style={S.code}>server/.env</code>.
-                They are checked once and never stored.
+                {editing
+                  ? "Changing an organization is reserved for the administrator — enter the ADMIN_EMAIL and ADMIN_PASSWORD credentials. Checked once, never stored."
+                  : "Opening an organization needs nothing. Creating one changes what this installation contains, so it asks for the administrator credentials. Checked once, never stored."}
               </p>
               <Field label="Administrator email">
                 <input style={S.input} type="email" value={admin.adminEmail}
@@ -349,7 +346,6 @@ export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
                 </div>
               </Field>
             </>
-          )}
         </div>
 
         <div style={S.modalFoot}>

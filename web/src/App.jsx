@@ -663,11 +663,16 @@ export default function App({
     colCompany, colStageSelect,
     ...allDataCols,
     ...sendCols,
-    { key: "actions", label: "", w: 190, align: "right", render: c => (
+    { key: "actions", label: "", w: sendMode ? 130 : 190, align: "right", render: c => (
       <div style={S.rowActions}>
-        <button className="row-btn" style={S.rowBtn} onClick={stop(() => compose([c], true))}>
-          <Send size={11} /> Email
-        </button>
+        {/* Ad-hoc compose — a custom message rather than the script. Hidden
+            in send mode, where the per-address Send cells own sending and a
+            second send affordance is just noise; the drawer still composes. */}
+        {!sendMode && (
+          <button className="row-btn" style={S.rowBtn} onClick={stop(() => compose([c], true))}>
+            <Send size={11} /> Email
+          </button>
+        )}
         <button className="row-btn-go" style={S.rowBtnGo} onClick={stop(() => openEdit(c))}>
           Edit
         </button>

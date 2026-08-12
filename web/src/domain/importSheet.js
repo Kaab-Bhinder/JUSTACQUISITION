@@ -1,5 +1,4 @@
 import * as XLSX from "xlsx";
-import { DEFAULT_STAGES } from "./stages.js";
 import { iso, today } from "./dates.js";
 import { keyify } from "./columns.js";
 
@@ -125,27 +124,6 @@ export const resolveNames = (names, headers, columns) => {
   return { map, clashes };
 };
 
-export const matchStage = (raw, stages) => {
-  const list = stages || DEFAULT_STAGES;
-  const n = norm(raw);
-  if (!n) return null;
-  const exact = list.find(s => norm(s.label) === n || norm(s.id) === n);
-  if (exact) return exact.id;
-  if (/(closed|won|signed|client|partner|live)/.test(n)) return "closed";
-  if (/(meeting|demo|booked|scheduled)/.test(n) || /\bcall\b/.test(n)) return "meeting";
-  if (/(respond|replied|reply|interested|warm)/.test(n)) return "responded";
-  const m = n.match(/(?:follow ?up|fu|touch) ?([1-9])/) || n.match(/^([1-9])$/);
-  if (m) { const hit = list.find(s => s.id === `fu${m[1]}`); if (hit) return hit.id; }
-  for (const [word, sid] of [["3rd", "fu3"], ["third", "fu3"], ["2nd", "fu2"],
-    ["second", "fu2"], ["1st", "fu1"], ["first", "fu1"]]) {
-    if (n.includes(word)) { const hit = list.find(s => s.id === sid); if (hit) return hit.id; }
-  }
-  const loose = list.find(s => n.includes(norm(s.label)));
-  if (loose) return loose.id;
-  if (/(new|outreach|not contacted|uncontacted|cold|prospect|lead)/.test(n)) return list[0]?.id || null;
-  return null;
-};
-
 // read a sheet into { head, body }, tolerating title rows above the header
 export const parseSheet = (wb, name) => {
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", blankrows: false });
@@ -154,17 +132,6 @@ export const parseSheet = (wb, name) => {
   const head = aoa[hi].map((h, i) => String(h).trim() || `Column ${i + 1}`);
   const body = aoa.slice(hi + 1).filter(r => r.some(c => String(c).trim() !== ""));
   return { head, body };
-};
-
-/* An optional slot alongside the declared columns: many sheets carry a stage
-   or status column, and reading it beats starting forty warm rows at Outreach.
-   Matched by name like everything else; unmapped means "everything starts at
-   the first stage". */
-export const STAGE_SLOT = "__stage";
-export const stageGuess = (headers) => {
-  const i = headers.findIndex(h =>
-    /\b(stage|status|funnel|step|progress)\b/.test(norm(h)));
-  return i >= 0 ? headers[i] : "";
 };
 
 /* ---- reading one cell, strictly ----------------------------------------
@@ -196,16 +163,19 @@ export const cleanCell = (raw, type) => {
 };
 
 /* Turn raw rows into records for POST /companies/import: each is
-   { data: {columnKey: value}, stage, stageSince, ... }. The vertical's own
-   column set decides what is read; everything else in the sheet is ignored. */
-export const buildImport = (rows, map, stageCol, existing, stages, columns) => {
+   { data: {columnKey: value}, stage, stageSince }. The vertical's own column
+   set decides what is read; everything else in the sheet is ignored.
+
+   EVERY imported lead starts at the funnel's FIRST stage, deliberately: a
+   sheet's status column describes someone else's process. The board's
+   Update-stage dropdown is where corrections happen. */
+export const buildImport = (rows, map, existing, stages, columns) => {
   const nameCol = (columns || []).find(c => c.role === "name");
   const webCol = (columns || []).find(c => c.role === "website");
 
   const seenName = new Set(existing.map(c => norm(c.name)));
   const seenSite = new Set(existing.map(c => cleanWeb(c.website)).filter(Boolean));
   const ready = [], dupes = [], skipped = [];
-  const guessed = { stage: 0 };
 
   rows.forEach((r, i) => {
     const data = {};
@@ -238,14 +208,8 @@ export const buildImport = (rows, map, stageCol, existing, stages, columns) => {
     const name = nameCol ? String(data[nameCol.key] ?? "").trim() : "";
     if (!name) { skipped.push({ row: i + 2, why: "nothing in the name column" }); return; }
 
-    const rawStage = stageCol >= 0 ? String(r[stageCol] ?? "").trim() : "";
-    const stage = matchStage(rawStage, stages) || (rawStage && guessed.stage++, stages[0].id);
     const stamp = iso(today);
-
-    const rec = { data, linkedin, stage, stageSince: stamp };
-    if (["responded", "meeting", "closed"].includes(stage)) rec.respondedOn = stamp;
-    if (["meeting", "closed"].includes(stage)) rec.meetingOn = stamp;
-    if (stage === "closed") rec.closedOn = stamp;
+    const rec = { data, linkedin, stage: stages[0].id, stageSince: stamp };
 
     const site = webCol ? cleanWeb(data[webCol.key]) : "";
     const key = norm(name);
@@ -254,7 +218,7 @@ export const buildImport = (rows, map, stageCol, existing, stages, columns) => {
     ready.push(rec);
   });
 
-  return { ready, dupes, skipped, guessed };
+  return { ready, dupes, skipped };
 };
 
 /* The display name of a queued record, for the review table. */
@@ -273,11 +237,11 @@ export const recName = (rec, columns) => {
 
 const memoryKey = (verticalId) => `crm.import.v${verticalId}`;
 
-export const rememberMapping = (verticalId, names, stageName) => {
+export const rememberMapping = (verticalId, names) => {
   if (!verticalId) return;
   try {
     localStorage.setItem(memoryKey(verticalId),
-      JSON.stringify({ names, stageName, at: Date.now() }));
+      JSON.stringify({ names, at: Date.now() }));
   } catch { /* private mode, or storage disabled */ }
 };
 
@@ -296,11 +260,11 @@ export const forgetMapping = (verticalId) => {
 };
 
 /* A sheet in exactly the shape this vertical declared: its columns as the
-   header row, plus a Stage column, with one example row of blanks. What the
+   header row with one example row of blanks. What the
    wizard described is what the template offers back. */
 export const downloadTemplate = (vertical) => {
   const cols = vertical?.columns || [];
-  const head = [...cols.map(c => c.label), "Stage"];
+  const head = cols.map(c => c.label);
   const example = cols.map(c =>
     c.type === "email" ? "person@company.com"
     : c.type === "phone" ? "(555) 555-0100"
@@ -308,7 +272,7 @@ export const downloadTemplate = (vertical) => {
     : c.type === "date" ? iso(today)
     : c.type === "number" ? "0"
     : "");
-  const ws = XLSX.utils.aoa_to_sheet([head, [...example, "Outreach"]]);
+  const ws = XLSX.utils.aoa_to_sheet([head, example]);
   ws["!cols"] = head.map(h => ({ wch: Math.max(18, h.length + 4) }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");

@@ -622,35 +622,12 @@ export default function App({
     },
   }));
 
-  /* The stage-update tag: lit once the row has been emailed, one click moves
-     it to the next stage. Bulk sets the stage itself, so this is for rows
-     worked by hand. */
-  const advCol = !sendMode ? [] : [{
-    key: "stageup", label: "Stage update", w: 150,
-    sortValue: c => FUNNEL.indexOf(c.stage),
-    render: c => {
-      const i = FUNNEL.indexOf(c.stage);
-      if (i < 0 || i >= FUNNEL.length - 1) return <span style={S.cellSub}>—</span>;
-      const touched_ = (c.emails || []).some(m => m.dir === "out");
-      return (
-        <button className="row-btn-go" style={S.rowBtnGo}
-          disabled={!touched_ || !!bulk}
-          title={touched_
-            ? `Move to ${labelOf(FUNNEL[i + 1], stages)}`
-            : "Send something first"}
-          onClick={stop(() => advanceMany([c.id]))}>
-          → {labelOf(FUNNEL[i + 1], stages)}
-        </button>
-      );
-    },
-  }];
-
   /* The stage as a dropdown on every row: the vertical's own stages, nothing
      else — the pipeline the user built IS the complete set of places a lead
      can be. A lead sitting in a legacy state (an auto-filed reply, say) shows
      that state as the selected line until a real stage is picked. */
   const colStageSelect = {
-    key: "stage", label: "Stage", w: 160,
+    key: "stage", label: "Update stage", w: 170,
     sortValue: c => FUNNEL.indexOf(c.stage),
     render: c => {
       const known = stages.some(s => s.id === c.stage);
@@ -669,11 +646,13 @@ export default function App({
   };
 
   const pipelineCols = [
-    /* Stage right beside the name: on a wide sheet the data columns scroll
-       away, and the one control every row needs must not scroll with them. */
+    /* Update-stage right beside the name: on a wide sheet the data columns
+       scroll away, and the one control every row needs must not scroll with
+       them. It is also the only hand-control for stages — one dropdown, no
+       competing buttons. */
     colCompany, colStageSelect,
     ...allDataCols,
-    ...sendCols, ...advCol,
+    ...sendCols,
     { key: "actions", label: "", w: 190, align: "right", render: c => (
       <div style={S.rowActions}>
         <button className="row-btn" style={S.rowBtn} onClick={stop(() => compose([c], true))}>

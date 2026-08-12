@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import { S } from "../theme.js";
 import { useStages, labelOf } from "../domain/stages.js";
 import {
-  parseSheet, guessNames, resolveNames, columnIndex, stageGuess, buildImport,
+  parseSheet, guessNames, resolveNames, buildImport,
   downloadTemplate, rememberMapping, recallMapping, forgetMapping,
 } from "../domain/importSheet.js";
 import { Field } from "./ui.jsx";
@@ -40,7 +40,6 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
      column key. Indices are derived, so the slots are the single source of
      truth and cannot disagree with the mapping. */
   const [names, setNames] = useState({});
-  const [stageName, setStageName] = useState("");
   const [recalled, setRecalled] = useState(false);
   const [skipDupes, setSkipDupes] = useState(true);
   const [err, setErr] = useState("");
@@ -51,8 +50,6 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
 
   const { map, clashes } = useMemo(
     () => resolveNames(names, head, columns), [names, head, columns]);
-  const stageCol = useMemo(
-    () => columnIndex(stageName, head), [stageName, head]);
 
   const nameKey = columns.find(c => c.role === "name")?.key;
 
@@ -63,8 +60,6 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
     setHead(p.head);
     setBody(p.body);
     setNames(guessNames(p.head, columns, memory?.names));
-    setStageName(memory?.stageName && columnIndex(memory.stageName, p.head) >= 0
-      ? memory.stageName : stageGuess(p.head));
     setRecalled(!!memory);
     setErr("");
     return true;
@@ -86,14 +81,13 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
 
   const result = useMemo(
     () => (step === "review"
-      ? buildImport(body, map, stageCol, existing, stages, columns) : null),
-    [step, body, map, stageCol, existing, stages, columns]);
+      ? buildImport(body, map, existing, stages, columns) : null),
+    [step, body, map, existing, stages, columns]);
   const queue = result ? (skipDupes ? result.ready : [...result.ready, ...result.dupes]) : [];
   const matched = columns.filter(c => map[c.key] >= 0).length;
 
   /* Which sheet columns nobody has claimed — the pool chips are dragged from. */
-  const assigned = new Set([...Object.values(map).filter(i => i >= 0),
-    ...(stageCol >= 0 ? [stageCol] : [])]);
+  const assigned = new Set(Object.values(map).filter(i => i >= 0));
   const spare = head.map((h, i) => ({ h, i })).filter(({ i }) => !assigned.has(i));
 
   const assign = (key, colIndex) => setNames(n => {
@@ -101,7 +95,6 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
     if (colIndex >= 0) {
       for (const k of Object.keys(next))
         if (next[k] && next[k] === head[colIndex]) next[k] = "";
-      if (stageName === head[colIndex]) setStageName("");
       next[key] = head[colIndex];
     } else {
       next[key] = "";
@@ -110,7 +103,7 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
   });
 
   const commit = () => {
-    rememberMapping(vertical.id, names, stageName);
+    rememberMapping(vertical.id, names);
     onImport(queue);
   };
 
@@ -202,8 +195,7 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
                   onDrop={e => {
                     e.preventDefault();
                     const from = e.dataTransfer.getData("text/field");
-                    if (from === "__stage") setStageName("");
-                    else if (from) assign(from, -1);
+                    if (from) assign(from, -1);
                     setDragCol(null);
                   }}>
                   <div style={S.mapPoolHead}>
@@ -230,7 +222,9 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
                   </div>
                 </div>
 
-                {/* the slots: the vertical's own columns, plus the stage extra */}
+                {/* the slots: the vertical's own columns. Deliberately no
+                    stage slot — every imported lead starts at the first
+                    stage, and the board's Update-stage dropdown moves it. */}
                 <div style={S.mapFields}>
                   <div style={S.mapGroup}>
                     <div style={S.mapGroupHead}>
@@ -244,37 +238,10 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
                         overField={overField} setOverField={setOverField}
                         onType={v => setNames(n => ({ ...n, [c.key]: v }))}
                         onDropCol={i => assign(c.key, i)}
-                        onDropField={(from) => {
-                          if (from === "__stage") { setNames(n => ({ ...n, [c.key]: stageName })); setStageName(""); }
-                          else setNames(n => ({ ...n, [from]: "", [c.key]: n[from] }));
-                        }}
+                        onDropField={(from) =>
+                          setNames(n => ({ ...n, [from]: "", [c.key]: n[from] }))}
                         onClear={() => assign(c.key, -1)} />
                     ))}
-                  </div>
-
-                  <div style={S.mapGroup}>
-                    <div style={S.mapGroupHead}>
-                      <span style={S.mapGroupTitle}>Optional</span>
-                    </div>
-                    <Slot field={{ key: "__stage", label: "Stage / status", required: false }}
-                      typed={stageName} index={stageCol}
-                      head={head} body={body} dragCol={dragCol}
-                      overField={overField} setOverField={setOverField}
-                      onType={setStageName}
-                      onDropCol={i => {
-                        const h = head[i];
-                        setNames(n => {
-                          const next = { ...n };
-                          for (const k of Object.keys(next)) if (next[k] === h) next[k] = "";
-                          return next;
-                        });
-                        setStageName(h);
-                      }}
-                      onDropField={(from) => {
-                        if (from === "__stage") return;
-                        setNames(n => { const v = n[from]; setStageName(v); return { ...n, [from]: "" }; })
-                      }}
-                      onClear={() => setStageName("")} />
                   </div>
                 </div>
               </div>
@@ -315,13 +282,11 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
                 </label>
               )}
 
-              {result.guessed.stage > 0 && (
-                <div style={S.warnBox}>
-                  <AlertTriangle size={15} />
-                  <span>{result.guessed.stage} rows had no readable stage, so they start
-                    at {labelOf(stages[0]?.id, stages)}.</span>
-                </div>
-              )}
+              <div style={S.infoBox}>
+                <Check size={14} />
+                <span>Every imported lead starts at <strong>{labelOf(stages[0]?.id, stages)}</strong> —
+                  move them with the Update-stage dropdown on the board.</span>
+              </div>
 
               {queue.length > 0 && (
                 <>
@@ -330,14 +295,13 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
                     <table style={S.preview}>
                       <thead><tr>
                         {columns.slice(0, 3).map(c => <th key={c.key} style={S.pTh}>{c.label}</th>)}
-                        <th style={S.pTh}>Stage</th>
+
                       </tr></thead>
                       <tbody>
                         {queue.slice(0, 6).map((r, i) => (
                           <tr key={i}>
                             {columns.slice(0, 3).map(c =>
                               <td key={c.key} style={S.pTd}>{r.data[c.key] || "—"}</td>)}
-                            <td style={S.pTd}>{labelOf(r.stage, stages)}</td>
                           </tr>
                         ))}
                       </tbody>

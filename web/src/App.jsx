@@ -665,16 +665,11 @@ export default function App({
     colCompany, colStageSelect,
     ...allDataCols,
     ...sendCols,
-    { key: "actions", label: "", w: sendMode ? 130 : 190, align: "right", render: c => (
+    /* Just Edit and delete. Sending lives in the Send cells (send mode) and
+       the bulk bar; a custom one-off message lives in the lead's drawer —
+       a per-row Email button on top of those was noise, twice questioned. */
+    { key: "actions", label: "", w: 130, align: "right", render: c => (
       <div style={S.rowActions}>
-        {/* Ad-hoc compose — a custom message rather than the script. Hidden
-            in send mode, where the per-address Send cells own sending and a
-            second send affordance is just noise; the drawer still composes. */}
-        {!sendMode && (
-          <button className="row-btn" style={S.rowBtn} onClick={stop(() => compose([c], true))}>
-            <Send size={11} /> Email
-          </button>
-        )}
         <button className="row-btn-go" style={S.rowBtnGo} onClick={stop(() => openEdit(c))}>
           Edit
         </button>

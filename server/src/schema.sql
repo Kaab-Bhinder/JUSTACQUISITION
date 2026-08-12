@@ -414,6 +414,13 @@ BEGIN
   END IF;
 END $$;
 
+-- Personal LinkedIn profiles (/in/) that earlier imports copied into the
+-- company-page field. A person's profile is a data column, not the company
+-- chip; clearing these lets the chip mean what it says. Idempotent: cleared
+-- rows don't match again.
+UPDATE companies SET linkedin = ''
+ WHERE linkedin LIKE '%linkedin.com/in/%';
+
 -- ===========================================================================
 -- CREATE — the pipeline
 -- ===========================================================================

@@ -989,6 +989,7 @@ export default function App({
 
               <ListMeta rows={pipeRows} total={inFunnel.length} />
               <DataTable cols={pipelineCols} rows={pipeRows} minWidth={pipeMinWidth}
+                numbered widthKey={`crm.colw.v${vertical.id}`}
                 picked={picked} onPick={togglePick} onPickAll={() => pickAll(pipeRows)}
                 sort={sort} onSort={toggleSort} onOpen={openCompany}
                 empty="Nobody in this stage. Add a company or import a sheet." />

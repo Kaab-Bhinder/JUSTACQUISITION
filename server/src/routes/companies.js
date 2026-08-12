@@ -43,13 +43,18 @@ async function insertCompany(client, orgId, vertical, c) {
   const p = project(vertical.columns, data);
   if (!p.name) return null;
 
+  /* companies.linkedin is the COMPANY page chip under the row's name. It is
+     deliberately NOT filled from the sheet's LinkedIn columns: those are the
+     POCs' personal profiles, and a person's profile chip masquerading as the
+     company was exactly the confusion this caused. Only a URL that arrived
+     embedded in the company-name cell (extracted by the import) lands here. */
   const { rows: [row] } = await client.query(
     `INSERT INTO companies (org_id, vertical_id, name, data, website, linkedin,
                             stage, stage_since, notes, responded_on, meeting_on, closed_on)
      VALUES ($1,$2,$3,$4,$5,$6,$7, COALESCE($8::date, CURRENT_DATE), $9,$10,$11,$12)
      RETURNING id`,
     [orgId, vertical.id, p.name, JSON.stringify(data), p.website,
-     cleanWeb(c.linkedin ?? data.linkedin), c.stage,
+     cleanWeb(c.linkedin), c.stage,
      c.stageSince || null, p.notes,
      c.respondedOn || null, c.meetingOn || null, c.closedOn || null]);
 

@@ -173,9 +173,17 @@ export const buildImport = (rows, map, existing, stages, columns) => {
   const nameCol = (columns || []).find(c => c.role === "name");
   const webCol = (columns || []).find(c => c.role === "website");
 
-  const seenName = new Set(existing.map(c => norm(c.name)));
-  const seenSite = new Set(existing.map(c => cleanWeb(c.website)).filter(Boolean));
-  const ready = [], dupes = [], skipped = [];
+  /* A company that's already on the board is UPDATED, never duplicated: the
+     incoming row carries the existing id, and the server merges the sheet's
+     values over what's stored. Matching is by name or by website — the same
+     rule that used to flag "duplicates", now put to work. */
+  const byName = new Map(existing.map(c => [norm(c.name), c]));
+  const bySite = new Map(existing.filter(c => cleanWeb(c.website))
+    .map(c => [cleanWeb(c.website), c]));
+  /* The same company twice IN ONE SHEET collapses into one record too —
+     later rows fill the blanks of the first. */
+  const inRun = new Map();
+  const ready = [], updates = [], skipped = [];
 
   rows.forEach((r, i) => {
     const data = {};
@@ -213,12 +221,26 @@ export const buildImport = (rows, map, existing, stages, columns) => {
 
     const site = webCol ? cleanWeb(data[webCol.key]) : "";
     const key = norm(name);
-    if (seenName.has(key) || (site && seenSite.has(site))) { dupes.push(rec); return; }
-    seenName.add(key); if (site) seenSite.add(site);
+
+    /* Already on the board → an update carrying the existing row's id. */
+    const hit = byName.get(key) || (site ? bySite.get(site) : undefined);
+    if (hit) { updates.push({ ...rec, updateId: hit.id }); return; }
+
+    /* Already earlier in this same sheet — by name or site → fill that
+       record's blanks rather than minting a twin. */
+    const prev = inRun.get(key) || (site ? inRun.get(`s:${site}`) : undefined);
+    if (prev) {
+      for (const [k, v] of Object.entries(rec.data))
+        if (v && !prev.data[k]) prev.data[k] = v;
+      return;
+    }
+
+    inRun.set(key, rec);
+    if (site) inRun.set(`s:${site}`, rec);
     ready.push(rec);
   });
 
-  return { ready, dupes, skipped };
+  return { ready, updates, skipped };
 };
 
 /* The display name of a queued record, for the review table. */

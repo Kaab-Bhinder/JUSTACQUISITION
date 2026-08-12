@@ -446,10 +446,12 @@ export default function App({
   });
 
   const commitImport = guard(async (recs) => {
-    const { companies: rows, count } = await api.importCompanies(recs);
+    const { companies: rows, count, added = count, updated = 0 } = await api.importCompanies(recs);
     merge(rows);
     setImportOpen(false);
-    flash(`${count} ${count === 1 ? "row" : "rows"} imported`);
+    flash(updated
+      ? `${added} new · ${updated} updated — no duplicates`
+      : `${count} ${count === 1 ? "row" : "rows"} imported`);
   });
 
   const counts = { pipeline: filtered.length, inbox: threads.length };

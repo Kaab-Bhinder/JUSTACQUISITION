@@ -107,30 +107,65 @@ companies.post("/import", async (req, res, next) => {
       return res.status(409).json({ error: "No pipeline stages exist yet." });
     const valid = new Set([...stages.map(s => s.id), ...TERMINAL]);
 
-    const inserted = await tx(async (client) => {
-      const out = [];
+    const { inserted, updated } = await tx(async (client) => {
+      const inserted = [], updated = [];
       for (const r of records) {
-        /* The lifecycle stamps ride along: a sheet whose status column said
-           "responded" or "closed" arrives with those dates set by the wizard,
-           and dropping them here would re-open every warm row as untouched. */
+        /* A record carrying updateId is a company already on this board: the
+           sheet's values merge OVER what's stored (a blank cell never erases
+           a value), the projections refresh, and — deliberately — the stage,
+           the thread and the history stay: re-importing a sheet must never
+           knock a lead back to the first stage or lose a conversation. */
+        if (r.updateId) {
+          const id = Number(r.updateId);
+          if (!Number.isInteger(id)) continue;
+          const { rows: [old] } = await client.query(
+            `SELECT data FROM companies
+              WHERE id = $1 AND org_id = $2 AND vertical_id = $3 FOR UPDATE`,
+            [id, req.orgId, req.verticalId]);
+          if (!old) continue;
+
+          const merged = {};
+          for (const [k, v] of Object.entries(old.data || {})) if (v) merged[k] = v;
+          for (const [k, v] of Object.entries(r.data || {})) if (v !== "" && v != null) merged[k] = v;
+          const data = cleanData(req.vertical.columns, merged);
+          const p = project(req.vertical.columns, data);
+          if (!p.name) continue;
+
+          await client.query(
+            `UPDATE companies
+                SET name = $1, data = $2, website = $3, notes = $4, updated_at = now()
+              WHERE id = $5`,
+            [p.name, JSON.stringify(data), p.website, p.notes, id]);
+          await client.query(`DELETE FROM contacts WHERE company_id = $1`, [id]);
+          for (const [i, k] of p.contacts.entries())
+            await client.query(
+              `INSERT INTO contacts (company_id, name, role, email, phone, position)
+               VALUES ($1,$2,$3,$4,$5,$6)`,
+              [id, k.name, k.role, k.email, k.phone, i]);
+          await addHistory(client, id, "Refreshed from spreadsheet import");
+          updated.push(id);
+          continue;
+        }
+
         const id = await insertCompany(client, req.orgId, req.vertical, {
           data: r.data || {}, linkedin: r.linkedin,
           stage: valid.has(r.stage) ? r.stage : stages[0].id,
           stageSince: r.stageSince,
-          respondedOn: r.respondedOn, meetingOn: r.meetingOn, closedOn: r.closedOn,
           history: [{ t: "Imported from spreadsheet" }],
         });
-        if (id !== null) out.push(id);
+        if (id !== null) inserted.push(id);
       }
-      return out;
+      return { inserted, updated };
     });
 
-    if (!inserted.length)
+    if (!inserted.length && !updated.length)
       return res.status(400).json({ error: "No rows had anything in the name column." });
 
     res.status(201).json({
-      companies: await companiesByIds(inserted, req.orgId),
-      count: inserted.length,
+      companies: await companiesByIds([...inserted, ...updated], req.orgId),
+      count: inserted.length + updated.length,
+      added: inserted.length,
+      updated: updated.length,
     });
   } catch (e) { next(e); }
 });

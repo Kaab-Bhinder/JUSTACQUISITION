@@ -421,6 +421,22 @@ END $$;
 UPDATE companies SET linkedin = ''
  WHERE linkedin LIKE '%linkedin.com/in/%';
 
+-- Duplicate leads from the era when re-importing a sheet could mint twins.
+-- Imports upsert now, so the same company can't arrive twice again; this
+-- clears the ones that already did. Per vertical, same name (case/space
+-- insensitive): the OLDEST row stays, newer copies go — but only copies that
+-- have no email thread and no history beyond their import stamp, so nothing
+-- a person actually worked on is ever collapsed away. Idempotent.
+DELETE FROM companies c
+ USING companies k
+ WHERE c.vertical_id = k.vertical_id
+   AND lower(btrim(c.name)) = lower(btrim(k.name))
+   AND c.id > k.id
+   AND NOT EXISTS (SELECT 1 FROM emails e WHERE e.company_id = c.id)
+   AND NOT EXISTS (SELECT 1 FROM history h
+                    WHERE h.company_id = c.id
+                      AND h.t NOT IN ('Imported from spreadsheet', 'Entered outreach'));
+
 -- ===========================================================================
 -- CREATE — the pipeline
 -- ===========================================================================

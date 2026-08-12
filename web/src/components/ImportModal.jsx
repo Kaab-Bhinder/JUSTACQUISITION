@@ -41,7 +41,6 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
      truth and cannot disagree with the mapping. */
   const [names, setNames] = useState({});
   const [recalled, setRecalled] = useState(false);
-  const [skipDupes, setSkipDupes] = useState(true);
   const [err, setErr] = useState("");
   const [dragging, setDragging] = useState(false);
   const [dragCol, setDragCol] = useState(null);
@@ -83,7 +82,9 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
     () => (step === "review"
       ? buildImport(body, map, existing, stages, columns) : null),
     [step, body, map, existing, stages, columns]);
-  const queue = result ? (skipDupes ? result.ready : [...result.ready, ...result.dupes]) : [];
+  /* New rows plus updates to rows already here — an import never mints a
+     duplicate: a match by name or website refreshes the existing lead. */
+  const queue = result ? [...result.ready, ...result.updates] : [];
   const matched = columns.filter(c => map[c.key] >= 0).length;
 
   /* Which sheet columns nobody has claimed — the pool chips are dragged from. */
@@ -269,23 +270,17 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
           {step === "review" && result && (
             <>
               <div style={S.stats}>
-                <Stat n={result.ready.length} label="ready to import" tone="good" />
-                <Stat n={result.dupes.length} label="already on this board" tone="warn" />
+                <Stat n={result.ready.length} label="new leads" tone="good" />
+                <Stat n={result.updates.length} label="already here — will be updated" tone="warn" />
                 <Stat n={result.skipped.length} label="skipped, no name" tone="mute" />
               </div>
 
-              {result.dupes.length > 0 && (
-                <label style={S.checkRow}>
-                  <input type="checkbox" style={S.check} checked={skipDupes}
-                    onChange={() => setSkipDupes(v => !v)} />
-                  <span>Skip the {result.dupes.length} that match a row already here, by name or website</span>
-                </label>
-              )}
-
               <div style={S.infoBox}>
                 <Check size={14} />
-                <span>Every imported lead starts at <strong>{labelOf(stages[0]?.id, stages)}</strong> —
-                  move them with the Update-stage dropdown on the board.</span>
+                <span>No duplicates, ever: a row matching an existing lead (by name or
+                  website) <strong>updates</strong> it — fills and refreshes its columns,
+                  keeps its stage and its email thread. New leads start at{" "}
+                  <strong>{labelOf(stages[0]?.id, stages)}</strong>.</span>
               </div>
 
               {queue.length > 0 && (
@@ -330,7 +325,10 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
           )}
           {step === "review" && (
             <button className="btn-fill" style={S.btnFill} disabled={!queue.length} onClick={commit}>
-              <Upload size={15} /> Import {queue.length} {queue.length === 1 ? "row" : "rows"}
+              <Upload size={15} />
+              {result.updates.length
+                ? `Import ${result.ready.length} new · update ${result.updates.length}`
+                : `Import ${queue.length} ${queue.length === 1 ? "row" : "rows"}`}
             </button>
           )}
         </div>

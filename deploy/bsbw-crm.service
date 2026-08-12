@@ -1,0 +1,18 @@
+# systemd unit — keeps the CRM API (which also serves the built frontend)
+# running across crashes and reboots. Install per deploy/DEPLOY.md.
+[Unit]
+Description=BSBW CRM (API + frontend)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/bsbw-crm/server
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=3
+# .env is read by the app itself (dotenv); nothing secret lives here.
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements --silent)",
+      "PowerShell(winget search --id PostgreSQL.PostgreSQL -e --accept-source-agreements)",
+      "PowerShell(winget search postgresql --accept-source-agreements)",
+      "PowerShell(winget show --id PostgreSQL.PostgreSQL.17 -e --accept-source-agreements)",
+      "PowerShell(winget install --id PostgreSQL.PostgreSQL.17 -e --accept-source-agreements --accept-package-agreements --silent --custom \"--mode unattended --unattendedmodeui none --superpassword postgres --serverport 5432 --disable-components stackbuilder\")",
+      "PowerShell(Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force)",
+      "PowerShell(Get-ExecutionPolicy -List)",
+      "PowerShell(git --version; \\(Get-Command node -ErrorAction SilentlyContinue\\).Source; \\(Get-Command npm -ErrorAction SilentlyContinue\\).Source)",
+      "PowerShell(Get-ChildItem -Force | Select-Object Mode,Name; \"---\"; Test-Path .claude; \"--- python ---\"; \\(Get-Command python -ErrorAction SilentlyContinue\\).Source; \\(Get-Command py -ErrorAction SilentlyContinue\\).Source)",
+      "WebFetch(domain:www.npmjs.com)",
+      "PowerShell(npm install -g ui-ux-pro-max-cli)",
+      "PowerShell(uipro --version)",
+      "PowerShell(uipro --help)",
+      "PowerShell(uipro init --help)",
+      "PowerShell(\"--- help ---\")",
+      "PowerShell(\"--- init help ---\")",
+      "PowerShell(uipro init --ai claude)",
+      "PowerShell(Get-ChildItem -Recurse -Force .claude | ForEach-Object { $_.FullName.Replace\\(\\(Get-Location\\).Path + '\\\\',''\\) } | Select-Object -First 60; \"--- count ---\"; \\(Get-ChildItem -Recurse -File .claude\\).Count)",
+      "mcp__21st__get_usage",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.claude\" -Force | Select-Object Mode,Name; \"---SKILLS---\"; if \\(Test-Path \"$env:USERPROFILE\\\\.claude\\\\skills\"\\) { Get-ChildItem \"$env:USERPROFILE\\\\.claude\\\\skills\" | Select-Object Name }; \"---PROJECT SKILLS---\"; if \\(Test-Path \".claude\\\\skills\"\\) { Get-ChildItem \".claude\\\\skills\" | Select-Object Name })",
+      "PowerShell(if \\(Test-Path \"$env:USERPROFILE\\\\.claude.json\"\\) { $j = Get-Content \"$env:USERPROFILE\\\\.claude.json\" -Raw | ConvertFrom-Json; \"top-level keys:\"; $j.PSObject.Properties.Name; \"---user mcpServers---\"; if \\($j.mcpServers\\) { $j.mcpServers.PSObject.Properties.Name } else { \"\\(none\\)\" } } else { \"no ~/.claude.json\" })",
+      "PowerShell(Get-ChildItem \".claude\\\\skills\" -Directory | ForEach-Object { $s = \\(Get-ChildItem $_.FullName -Recurse -File | Measure-Object -Property Length -Sum\\); [PSCustomObject]@{ Skill=$_.Name; Files=$s.Count; MB=[math]::Round\\($s.Sum/1MB,2\\) } } | Format-Table -AutoSize)",
+      "PowerShell($v=[Environment]::GetEnvironmentVariable\\(\"API_KEY_21ST\",\"User\"\\); if\\($v\\){\"API_KEY_21ST: set, length=$\\($v.Length\\)\"}else{\"API_KEY_21ST: NOT set\"}; \"--- claude cli ---\"; $c=\\(Get-Command claude -ErrorAction SilentlyContinue\\); if\\($c\\){$c.Source}else{\"claude CLI not on PATH\"}; \"--- user CLAUDE.md ---\"; Test-Path \"$env:USERPROFILE\\\\.claude\\\\CLAUDE.md\")",
+      "PowerShell($src=\"$env:USERPROFILE\\\\.claude.json\"; $bak=\"$env:USERPROFILE\\\\.claude.json.bak-20260811\"; Copy-Item $src $bak -Force; \"backup: $bak\"; $raw=[System.IO.File]::ReadAllText\\($src\\); \"size: $\\($raw.Length\\) chars\"; \"first char code: $\\([int]$raw[0]\\)\"; \"has mcpServers: $\\($raw -match '\\\\\"mcpServers\\\\\"'\\)\")",
+      "PowerShell($m=\"$env:USERPROFILE\\\\.claude\\\\projects\\\\c--Users-abdul-OneDrive-Desktop-bsbw-crm\\\\memory\"; if\\(Test-Path \"$m\\\\MEMORY.md\"\\){\"MEMORY.md exists:\"; Get-Content \"$m\\\\MEMORY.md\"}else{\"no MEMORY.md\"}; \"--- files ---\"; Get-ChildItem $m -File -ErrorAction SilentlyContinue | Select-Object Name)"
+    ]
+  }
+}

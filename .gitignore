@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.txt
+*.log
+.DS_Store
+# generated key that seals per-vertical SMTP app passwords — never commit
+.credential-key

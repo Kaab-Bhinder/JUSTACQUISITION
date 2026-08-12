@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import * as api from "./api.js";
 import { Boot } from "./components/Boot.jsx";
+import { GateLogin } from "./pages/GateLogin.jsx";
 import { Landing } from "./pages/Landing.jsx";
 import { VerticalPicker } from "./pages/VerticalPicker.jsx";
 import App from "./App.jsx";
@@ -60,6 +61,10 @@ export default function Root() {
   const [verticalId, setVerticalId] = useState(() => fromHash().vertical);
   const [theme, setTheme] = useState(readTheme);
   const [error, setError] = useState("");
+  /* 401 from the first load: the API's gate wants credentials and (cross-
+     origin) the browser prompt can't collect them — our login screen does. */
+  const [needGate, setNeedGate] = useState(false);
+  const [gateError, setGateError] = useState("");
 
   const toggleTheme = () => setTheme(t => {
     const next = t === "dark" ? "light" : "dark";
@@ -80,29 +85,42 @@ export default function Root() {
     setHash(okOrg, okVert);
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const { orgs: list } = await api.listOrgs();
-        if (!alive) return;
-        setOrgs(list || []);
-        const want = fromHash();
-        const okOrg = want.org && (list || []).some(o => o.id === want.org) ? want.org : null;
-        api.setOrg(okOrg);
-        setOrgId(okOrg);
-        if (!okOrg) { setHash(null, null); return; }
-        /* The vertical list needs the org header set first. */
-        const { verticals: vs } = await api.listVerticalsIn();
-        if (!alive) return;
-        setVerticals(vs || []);
-        settle(list, vs, okOrg, want.vertical);
-      } catch (e) {
-        if (alive) setError(e.message);
-      }
-    })();
-    return () => { alive = false; };
+  const boot = useCallback(async () => {
+    try {
+      const { orgs: list } = await api.listOrgs();
+      setNeedGate(false);
+      setOrgs(list || []);
+      const want = fromHash();
+      const okOrg = want.org && (list || []).some(o => o.id === want.org) ? want.org : null;
+      api.setOrg(okOrg);
+      setOrgId(okOrg);
+      if (!okOrg) { setHash(null, null); return; }
+      /* The vertical list needs the org header set first. */
+      const { verticals: vs } = await api.listVerticalsIn();
+      setVerticals(vs || []);
+      settle(list, vs, okOrg, want.vertical);
+    } catch (e) {
+      if (e.status === 401) { setNeedGate(true); return; }
+      setError(e.message);
+    }
   }, [settle]);
+
+  useEffect(() => { boot(); }, [boot]);
+
+  /* The login screen's submit: keep the pair for the session, try again.
+     A wrong pair lands straight back here with a message instead of looping. */
+  const signIn = async (user, pass) => {
+    api.setGate(user, pass);
+    setGateError("");
+    try {
+      await api.listOrgs();
+    } catch (e) {
+      api.clearGate();
+      setGateError(e.status === 401 ? "That user and password don't match." : e.message);
+      return;
+    }
+    await boot();
+  };
 
   /* Back/forward. Everything that changes org or vertical also writes the
      hash, so this listener is the single reaction to it. */
@@ -189,6 +207,7 @@ export default function Root() {
     document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
+  if (needGate) return <GateLogin theme={theme} error={gateError} onSubmit={signIn} />;
   if (error) return <Boot theme={theme} error={error} />;
   if (orgs === undefined) return <Boot theme={theme} error="" />;
 

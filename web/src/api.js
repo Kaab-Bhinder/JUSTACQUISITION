@@ -25,6 +25,23 @@ let orgId = null;
 export const setOrg = (id) => { orgId = id || null; };
 export const getOrg = () => orgId;
 
+/* ---- the deployment gate, from a separate origin ------------------------
+   Served by the API itself, the browser's own basic-auth prompt covers the
+   gate. Served from another origin (a Vercel frontend calling the Render
+   API), fetch() never shows that prompt — so the app collects the same
+   credentials once in its own login screen and attaches them to every
+   request. Kept for the session, not forever: closing the tab forgets. */
+let gate = null;
+try { gate = sessionStorage.getItem("crm.gate") || null; } catch { /* private mode */ }
+export const setGate = (user, pass) => {
+  gate = "Basic " + btoa(`${user}:${pass}`);
+  try { sessionStorage.setItem("crm.gate", gate); } catch { /* ignore */ }
+};
+export const clearGate = () => {
+  gate = null;
+  try { sessionStorage.removeItem("crm.gate"); } catch { /* ignore */ }
+};
+
 /* One level below the organization: which vertical's board the CRM screens
    are working. Held the same way and for the same reason as the org id. */
 let verticalId = null;
@@ -50,6 +67,7 @@ async function req(method, path, body, { org = true, vertical = false } = {}) {
      stale id there would fail a request that should have succeeded. */
   if (org && orgId) headers["X-Org-Id"] = orgId;
   if (vertical && verticalId) headers["X-Vertical-Id"] = String(verticalId);
+  if (gate) headers["Authorization"] = gate;
 
   let res;
   try {

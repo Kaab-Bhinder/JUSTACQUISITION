@@ -20,11 +20,16 @@ import { mail } from "./routes/mail.js";
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 
-/* One named origin rather than `*`. No cookie travels any more — there are no
-   sessions — but naming the origin still keeps a stray page on another host
-   from driving this API against whatever is on localhost. In dev, Vite proxies
-   /api so the browser stays same-origin and none of this comes into play. */
-app.use(cors({ origin: process.env.WEB_ORIGIN || "http://localhost:5173" }));
+/* Named origins rather than `*`. No cookie travels — there are no sessions —
+   but naming origins still keeps a stray page on another host from driving
+   this API. WEB_ORIGIN takes a comma-separated list, so a Vercel frontend
+   and the Render URL can both be first-class:
+     WEB_ORIGIN=https://app.vercel.app,https://bsbw-crm.onrender.com
+   In dev, Vite proxies /api so the browser stays same-origin and none of
+   this comes into play. */
+const ORIGINS = (process.env.WEB_ORIGIN || "http://localhost:5173")
+  .split(",").map(s => s.trim()).filter(Boolean);
+app.use(cors({ origin: ORIGINS.length === 1 ? ORIGINS[0] : ORIGINS }));
 /* Pasted email bodies are the biggest thing that arrives here, and a long
    quoted chain clears the 100kb default. */
 app.use(express.json({ limit: "2mb" }));

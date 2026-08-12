@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   X, Building2, AlertTriangle, Upload, Trash2, ImageIcon, ShieldCheck,
   Eye, EyeOff,
@@ -27,7 +27,90 @@ const slugify = (s) => String(s ?? "").toLowerCase()
 const initials = (name) => String(name ?? "").trim().split(/\s+/)
   .slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
 
-export function OrgForm({ org, taken = [], onSave, onCancel, busy }) {
+/* Deleting an organization is the biggest hammer in the product: every
+   vertical, lead, thread and pipeline inside it goes. So it asks for
+   everything at once — a countdown, the organization's name typed back, and
+   the administrator credentials the server will verify. */
+function OrgDeleteDialog({ org, onConfirm, onCancel }) {
+  const [left, setLeft] = useState(5);
+  const [typed, setTyped] = useState("");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (left <= 0) return;
+    const t = setTimeout(() => setLeft(v => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [left]);
+
+  const armed = left <= 0 && typed.trim() === org.name && email.trim() && pass;
+
+  const go = async () => {
+    if (!armed || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onConfirm({ confirm: typed.trim(), adminEmail: email.trim(), adminPassword: pass });
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="scrim" style={{ ...S.scrim, zIndex: 60 }} onClick={onCancel} />
+      <div className="modal" style={{ ...S.modal, maxWidth: 470, zIndex: 61 }}
+        role="alertdialog" aria-modal="true" aria-label={`Delete ${org.name}`}>
+        <div style={S.modalHead}>
+          <button type="button" style={S.closeBtn} onClick={onCancel} aria-label="Close"><X size={18} /></button>
+          <div style={{ ...S.modalStep, color: "var(--danger)" }}>
+            <AlertTriangle size={12} style={{ verticalAlign: -1.5, marginRight: 5 }} />
+            This cannot be undone
+          </div>
+          <h2 style={S.modalTitle}>Delete the {org.name} organization?</h2>
+        </div>
+        <div style={S.modalBody}>
+          <div style={S.errBox}>
+            <AlertTriangle size={15} />
+            <span>Everything inside goes with it — every vertical, every lead, every
+              email thread, every pipeline, every sending account. The whole
+              workspace, gone.</span>
+          </div>
+          {error && <div style={{ ...S.errBox, marginTop: 10 }}><AlertTriangle size={15} /><span>{error}</span></div>}
+          <div style={{ marginTop: 14 }}>
+            <label style={S.fieldLabel}>Type “{org.name}” to confirm</label>
+            <input style={{ ...S.input, marginBottom: 12 }} value={typed} autoFocus
+              placeholder={org.name} onChange={e => setTyped(e.target.value)} />
+            <label style={S.fieldLabel}>Administrator email</label>
+            <input style={{ ...S.input, marginBottom: 12 }} type="email" value={email}
+              autoComplete="off" onChange={e => setEmail(e.target.value)} />
+            <label style={S.fieldLabel}>Administrator password</label>
+            <input style={S.input} type="password" value={pass}
+              autoComplete="off" onChange={e => setPass(e.target.value)} />
+          </div>
+        </div>
+        <div style={S.modalFoot}>
+          <div style={{ flex: 1 }} />
+          <button type="button" className="btn-ghost" style={S.btnGhost} onClick={onCancel}>
+            Keep it
+          </button>
+          <button type="button" className="btn-fill"
+            style={{ ...S.btnFill, background: "var(--danger)", opacity: armed ? 1 : 0.55 }}
+            disabled={!armed || busy}
+            onClick={go}>
+            <Trash2 size={14} />
+            {busy ? "Deleting…" : left > 0 ? `Delete organization (${left})` : "Delete organization"}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
   const editing = !!org;
 
   const [f, setF] = useState(() => ({
@@ -40,8 +123,6 @@ export function OrgForm({ org, taken = [], onSave, onCancel, busy }) {
     logo: org?.logo || "",
     tagline: org?.tagline || "",
     accent: org?.accent || "#0ABAB5",
-    senderName: org?.senderName || "",
-    senderEmail: org?.senderEmail || "",
   }));
   /* Kept apart from the organization's own fields: these are credentials for
      one request, not part of the record being created, and keeping them in
@@ -51,6 +132,7 @@ export function OrgForm({ org, taken = [], onSave, onCancel, busy }) {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [logoBusy, setLogoBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const logoRef = useRef(null);
 
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
@@ -100,8 +182,6 @@ export function OrgForm({ org, taken = [], onSave, onCancel, busy }) {
       logo: f.logo,
       tagline: f.tagline.trim(),
       accent: f.accent,
-      senderName: f.senderName.trim(),
-      senderEmail: f.senderEmail.trim(),
     };
     if (!editing) payload.id = id;
     /* Credentials travel as a second argument, never merged into the record,
@@ -125,7 +205,7 @@ export function OrgForm({ org, taken = [], onSave, onCancel, busy }) {
           <p style={S.modalSub}>
             {editing
               ? "Branding, verticals and the signature shown on the composer. Its id and its pipeline stay as they are."
-              : "It starts with the four default funnel stages and no companies."}
+              : "It starts empty — verticals, their pipelines and their leads are all added inside."}
           </p>
         </div>
 
@@ -220,19 +300,19 @@ export function OrgForm({ org, taken = [], onSave, onCancel, busy }) {
             </div>
           </Field>
 
-          <div style={{ ...S.sectionTitle, marginTop: 24 }}>Email signature</div>
-          <p style={{ ...S.auHint, marginTop: -4, marginBottom: 14 }}>
-            What <code style={S.code}>{"{{sender}}"}</code> becomes in this organization&apos;s
-            templates. A label only — mail is still sent by you, from Gmail.
-          </p>
-          <Field label="Sender name">
-            <input style={S.input} value={f.senderName} placeholder={f.name || "Partnerships"}
-              onChange={e => set("senderName", e.target.value)} />
-          </Field>
-          <Field label="Sender email">
-            <input style={S.input} type="email" value={f.senderEmail} placeholder="partners@example.com"
-              onChange={e => set("senderEmail", e.target.value)} />
-          </Field>
+          {/* No sender fields here on purpose: sending identity — the Gmail
+              account, its app password, the From name — belongs to each
+              vertical and lives in its settings. An organization is branding
+              and a container, nothing that touches mail. */}
+
+          {editing && onDelete && (
+            <div style={{ marginTop: 26, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+              <button type="button" className="d-remove" style={S.dRemove}
+                onClick={() => setDeleting(true)}>
+                <Trash2 size={14} /> Delete this organization…
+              </button>
+            </div>
+          )}
 
           {/* ---- the gate ----
               Last, because it is the price of the form rather than part of the
@@ -281,6 +361,12 @@ export function OrgForm({ org, taken = [], onSave, onCancel, busy }) {
           </button>
         </div>
       </form>
+
+      {deleting && (
+        <OrgDeleteDialog org={org}
+          onConfirm={onDelete}
+          onCancel={() => setDeleting(false)} />
+      )}
     </>
   );
 }

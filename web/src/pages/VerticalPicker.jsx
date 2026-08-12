@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import {
   Plus, ArrowRight, ArrowLeft, Sun, Moon, Layers, Mail, X, AlertTriangle,
-  Settings2,
+  Settings2, Trash2,
 } from "lucide-react";
 import { S, CSS, orgVars } from "../theme.js";
 import { OrgMark } from "../components/OrgMark.jsx";
 import { brandTokens, rgba } from "../domain/colour.js";
+import { ConfirmDelete } from "../components/ConfirmDelete.jsx";
 
 /* ----------------------------------------------------------------------
    Vertical picker — inside one organization
@@ -23,7 +24,7 @@ import { brandTokens, rgba } from "../domain/colour.js";
 
 const ACCENTS = ["#0ABAB5", "#5B6BF0", "#9B5DE5", "#E85D75", "#E8871E", "#2E9E5B", "#0E86D4"];
 
-function VerticalCard({ v, index, onOpen }) {
+function VerticalCard({ v, index, onOpen, onAskDelete }) {
   const ref = useRef(null);
   const t = brandTokens(v.accent);
   const track = (e) => {
@@ -35,6 +36,7 @@ function VerticalCard({ v, index, onOpen }) {
   };
 
   return (
+    <div style={{ position: "relative" }}>
     <button ref={ref} className="lp-card lp-rise" onPointerMove={track}
       onClick={() => onOpen(v.id)}
       style={{
@@ -84,6 +86,19 @@ function VerticalCard({ v, index, onOpen }) {
         )}
       </div>
     </button>
+    {/* Outside the card button — a delete must never be a slip of the same
+        click that opens the board. */}
+    <button type="button"
+      style={{ position: "absolute", top: 10, right: 10, zIndex: 2,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 30, height: 30, borderRadius: 8, border: "none", cursor: "pointer",
+        color: "var(--danger)", background: "var(--surface-3)" }}
+      title={`Delete the ${v.name} vertical…`}
+      aria-label={`Delete the ${v.name} vertical`}
+      onClick={(e) => { e.stopPropagation(); onAskDelete(v); }}>
+      <Trash2 size={13} />
+    </button>
+    </div>
   );
 }
 
@@ -158,10 +173,11 @@ function AddDialog({ taken, busy, onCreate, onCancel }) {
 }
 
 export function VerticalPicker({
-  org, verticals, theme, onToggleTheme, onOpen, onCreate, onLeave,
+  org, verticals, theme, onToggleTheme, onOpen, onCreate, onLeave, onDelete,
 }) {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [toDelete, setToDelete] = useState(null);   // the vertical a card asked about
 
   const create = async (payload) => {
     setBusy(true);
@@ -216,7 +232,8 @@ export function VerticalPicker({
 
         <div style={S.lpGrid}>
           {verticals.map((v, i) => (
-            <VerticalCard key={v.id} v={v} index={i} onOpen={onOpen} />
+            <VerticalCard key={v.id} v={v} index={i} onOpen={onOpen}
+              onAskDelete={setToDelete} />
           ))}
 
           <button className="lp-add lp-rise" style={{ ...S.lpAdd, "--d": `${verticals.length * 70}ms` }}
@@ -242,6 +259,17 @@ export function VerticalPicker({
       {adding && (
         <AddDialog taken={verticals} busy={busy}
           onCreate={create} onCancel={() => setAdding(false)} />
+      )}
+
+      {toDelete && (
+        <ConfirmDelete
+          title={`Delete the ${toDelete.name} vertical?`}
+          message={`Everything on its board goes with it — all ${toDelete.companies ?? 0} leads, every email thread, the pipeline, the script and the sending account.`}
+          requireText={toDelete.name}
+          confirmLabel="Delete"
+          seconds={5}
+          onConfirm={async () => { await onDelete(toDelete); setToDelete(null); }}
+          onCancel={() => setToDelete(null)} />
       )}
     </div>
   );

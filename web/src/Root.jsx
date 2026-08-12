@@ -202,6 +202,13 @@ export default function Root() {
     return vertical;
   };
 
+  /* From the picker's card — the dialog there has already made the person
+     type the name and sit out the countdown. */
+  const deleteVerticalCard = async (v) => {
+    const { verticals: vs } = await api.deleteVertical(v.id, v.name);
+    setVerticals(vs);
+  };
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     document.documentElement.style.colorScheme = theme;
@@ -231,7 +238,7 @@ export default function Root() {
         theme={theme} onToggleTheme={toggleTheme}
         onOpen={openVertical} onCreate={createVertical}
         onLeave={leaveOrg}
-        onDeleted={(vs) => setVerticals(vs)} />
+        onDelete={deleteVerticalCard} />
     );
   }
 

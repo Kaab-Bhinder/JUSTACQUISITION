@@ -48,7 +48,7 @@ import { VerticalSetup } from "./components/VerticalSetup.jsx";
 
 export default function App({
   org, vertical: verticalProp, verticals, theme, onToggleTheme,
-  onLeave, onSwitchVertical, onVerticalsUpdated, onOrgUpdated,
+  onLeave, onLeaveOrg, onSwitchVertical, onVerticalsUpdated, onOrgUpdated,
 }) {
   /* The vertical is edited in place (settings, the wizard), so the fresh copy
      lives in state seeded from the prop. */
@@ -397,6 +397,16 @@ export default function App({
     onOrgUpdated(orgs);
     setOrgSettings(false);
     flash("Organization updated");
+  };
+
+  /* The dialog collected the typed name and the admin credentials; the
+     server verifies both. Success ends on the landing page — the place this
+     organization no longer is. Thrown errors surface in the dialog. */
+  const deleteOrganization = async ({ confirm, adminEmail, adminPassword }) => {
+    const { orgs } = await api.deleteOrg(org.id, confirm, { adminEmail, adminPassword });
+    onOrgUpdated(orgs);
+    setOrgSettings(false);
+    onLeaveOrg();
   };
 
   /* The wizard and the settings dialog both save through here. Partial
@@ -1088,7 +1098,8 @@ export default function App({
         onCancel={() => setImportOpen(false)} onImport={commitImport} />}
 
       {orgSettings && <OrgForm org={org}
-        onSave={saveOrg} onCancel={() => setOrgSettings(false)} />}
+        onSave={saveOrg} onDelete={deleteOrganization}
+        onCancel={() => setOrgSettings(false)} />}
 
       {verticalSettings && <VerticalSetup vertical={vertical} firstRun={false}
         stages={stages}

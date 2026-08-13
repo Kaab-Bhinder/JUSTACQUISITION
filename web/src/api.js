@@ -60,7 +60,7 @@ export class ApiError extends Error {
 }
 
 
-async function req(method, path, body, { org = true, vertical = false } = {}) {
+async function req(method, path, body, { org = true, vertical = false, timeoutMs = 0 } = {}) {
   const headers = {};
   if (body) headers["Content-Type"] = "application/json";
   /* The organization-list endpoints are answered without one, and sending a
@@ -69,16 +69,27 @@ async function req(method, path, body, { org = true, vertical = false } = {}) {
   if (vertical && verticalId) headers["X-Vertical-Id"] = String(verticalId);
   if (gate) headers["Authorization"] = gate;
 
+  /* Calls that can hang on the server side (an SMTP verify against a host
+     whose email ports are blocked) carry their own deadline, so a button can
+     never spin forever waiting on a request nothing will ever answer. */
+  const ctl = timeoutMs ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+
   let res;
   try {
     res = await fetch(`${BASE}${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      ...(ctl ? { signal: ctl.signal } : {}),
     });
-  } catch {
+  } catch (e) {
+    if (e?.name === "AbortError")
+      throw new ApiError("The server didn't answer in time. If this was a sending-account test, the host may be blocking email ports — on Render that means the free plan.", 0);
     /* fetch only rejects when the request never got an answer. */
     throw new ApiError("Can't reach the server. Is the API running on port 4000?", 0);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 
   const text = await res.text();
@@ -117,7 +128,8 @@ export const listVerticalsIn = () => get("/verticals");
 export const createVertical = (data) => post("/verticals", data);
 export const getVerticalDetail = (id) => get(`/verticals/${id}`);
 export const updateVertical = (id, patch) => req("PATCH", `/verticals/${id}`, patch);
-export const testVerticalSmtp = (id, to) => post(`/verticals/${id}/test`, { to });
+export const testVerticalSmtp = (id, to) =>
+  req("POST", `/verticals/${id}/test`, { to }, { org: true, vertical: false, timeoutMs: 60000 });
 export const deleteVertical = (id, confirm) => post(`/verticals/${id}/delete`, { confirm });
 
 /* ---- the CRM itself ---------------------------------------------------

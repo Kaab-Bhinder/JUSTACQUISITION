@@ -57,6 +57,13 @@ export function transporterFor(vertical) {
     /* Gmail's own guidance is gentle sending; this also keeps one bad address
        in a bulk send from stalling the rest behind it. */
     maxMessages: 50,
+    /* Hosts that BLOCK outbound SMTP (Render's free tier drops 465/587
+       silently) would otherwise hang a verify or a send forever — the
+       browser's button spins until someone gives up and refreshes. Bounded
+       waits turn that into an error with a name within seconds. */
+    connectionTimeout: 15000,
+    greetingTimeout: 12000,
+    socketTimeout: 30000,
   });
   pools.set(key, t);
   return t;
@@ -115,8 +122,9 @@ function friendly(e) {
   const s = String(e?.message || e);
   if (e?.code === "EAUTH" || /535|username and password not accepted/i.test(s))
     return "Gmail refused that sign-in. Check the address, and use an app password (Google Account → Security → 2-Step Verification → App passwords) — not the account password.";
-  if (e?.code === "EDNS" || e?.code === "ECONNECTION" || e?.code === "ETIMEDOUT")
-    return `Couldn't reach ${HOST}. Check the network, or a firewall blocking port ${PORT}.`;
+  if (e?.code === "EDNS" || e?.code === "ECONNECTION" || e?.code === "ETIMEDOUT" ||
+      /timed? ?out/i.test(s))
+    return `Couldn't reach ${HOST} on port ${PORT} from this server. If the CRM is hosted on Render's FREE plan, that's the cause — free instances block outbound email ports (465/587); upgrade the service to Starter, or host the API somewhere SMTP is allowed. Otherwise check the network/firewall.`;
   if (/daily.*limit|quota|421|too many/i.test(s))
     return "Gmail is rate-limiting this account. Wait a while before sending more.";
   return s;

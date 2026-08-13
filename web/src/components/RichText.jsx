@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   Bold, Italic, Underline, Link2, List, ListOrdered, AlignLeft, AlignCenter,
-  AlignRight, Image as ImageIcon, Undo2, Redo2, Eraser,
+  AlignRight, Image as ImageIcon, Undo2, Redo2, Eraser, Wand2,
 } from "lucide-react";
 import { S } from "../theme.js";
 
@@ -95,20 +95,55 @@ export function RichText({ value, onChange, placeholder, minHeight = 220, editor
      ink here and each mail client's default at the other end. Deliberate
      colours (a brand link, a highlight that isn't white-on-black plumbing)
      survive. */
-  const stripPasteBaggage = (html) => {
-    const div = document.createElement("div");
-    div.innerHTML = html;
-    for (const el of div.querySelectorAll("*")) {
+  /* A pinned grayscale colour is plumbing, not design: black/#222 pins from
+     light-mode pastes go invisible-adjacent in dark inboxes, white pins from
+     dark-mode pastes vanish on white ones. Unpinning every gray (white,
+     black, and the shades between) leaves the text inheriting each mail
+     client's own default — universal by construction. Real colours (link
+     blue, brand accents) are kept: those ARE design. */
+  const grayish = (raw) => {
+    const c = String(raw || "").trim().toLowerCase();
+    if (!c) return false;
+    if (["black", "white", "windowtext", "gray", "grey"].includes(c)) return true;
+    let r, g, b;
+    let m = /^#([0-9a-f]{3})$/.exec(c);
+    if (m) [r, g, b] = [...m[1]].map(h => parseInt(h + h, 16));
+    m = m || /^#([0-9a-f]{6})$/.exec(c);
+    if (!r && m && m[1].length === 6)
+      [r, g, b] = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16));
+    m = /^rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(c);
+    if (m) [r, g, b] = [+m[1], +m[2], +m[3]];
+    if (r === undefined) return false;
+    return Math.max(r, g, b) - Math.min(r, g, b) <= 16;
+  };
+
+  const unpinPlumbing = (root) => {
+    for (const el of root.querySelectorAll("*")) {
       el.removeAttribute("bgcolor");
+      if (el.getAttribute("color") && grayish(el.getAttribute("color")))
+        el.removeAttribute("color");
       const st = el.style;
       if (!st) continue;
       st.removeProperty("background");
       st.removeProperty("background-color");
-      const c = (st.color || "").replace(/\s+/g, "").toLowerCase();
-      if (["#000", "#000000", "rgb(0,0,0)", "black", "windowtext"].includes(c))
-        st.removeProperty("color");
+      if (grayish(st.color)) st.removeProperty("color");
     }
+  };
+
+  const stripPasteBaggage = (html) => {
+    const div = document.createElement("div");
+    div.innerHTML = html;
+    unpinPlumbing(div);
     return div.innerHTML;
+  };
+
+  /* The wand: run the same cleaning over everything already in the editor —
+     for content pasted before this existed, or colours applied by hand. */
+  const makeUniversal = () => {
+    const el = elRef.current;
+    if (!el) return;
+    unpinPlumbing(el);
+    emit();
   };
 
   const onPaste = (e) => {
@@ -185,6 +220,11 @@ export function RichText({ value, onChange, placeholder, minHeight = 220, editor
         </ToolButton>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
           onChange={e => { insertImageFile(e.target.files?.[0]); e.target.value = ""; }} />
+        <ToolButton
+          title="Make universal — strip backgrounds and pinned black/white text so it adapts to every inbox, light or dark"
+          onClick={makeUniversal}>
+          <Wand2 size={14} />
+        </ToolButton>
         <ToolButton title="Clear formatting" onClick={() => exec("removeFormat")}><Eraser size={14} /></ToolButton>
       </div>
 

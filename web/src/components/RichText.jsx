@@ -88,6 +88,29 @@ export function RichText({ value, onChange, placeholder, minHeight = 220, editor
     reader.readAsDataURL(file);
   };
 
+  /* Pasted HTML drags its old home's decor along — Gmail signatures arrive
+     wrapped in background:white with hard-black text, which renders as a
+     white slab in a dark editor and ships a white slab inside the email.
+     Backgrounds go; pure-black text is unpinned so it inherits the editor's
+     ink here and each mail client's default at the other end. Deliberate
+     colours (a brand link, a highlight that isn't white-on-black plumbing)
+     survive. */
+  const stripPasteBaggage = (html) => {
+    const div = document.createElement("div");
+    div.innerHTML = html;
+    for (const el of div.querySelectorAll("*")) {
+      el.removeAttribute("bgcolor");
+      const st = el.style;
+      if (!st) continue;
+      st.removeProperty("background");
+      st.removeProperty("background-color");
+      const c = (st.color || "").replace(/\s+/g, "").toLowerCase();
+      if (["#000", "#000000", "rgb(0,0,0)", "black", "windowtext"].includes(c))
+        st.removeProperty("color");
+    }
+    return div.innerHTML;
+  };
+
   const onPaste = (e) => {
     const items = e.clipboardData?.items || [];
     for (const it of items) {
@@ -97,7 +120,13 @@ export function RichText({ value, onChange, placeholder, minHeight = 220, editor
         return;
       }
     }
-    /* Text pastes fall through to the browser's default. */
+    const html = e.clipboardData?.getData("text/html");
+    if (html) {
+      e.preventDefault();
+      exec("insertHTML", stripPasteBaggage(html));
+      return;
+    }
+    /* Plain-text pastes fall through to the browser's default. */
   };
 
   const fileRef = useRef(null);

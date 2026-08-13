@@ -432,6 +432,8 @@ export default function App({
   });
 
   const testVerticalSmtp = () => api.testVerticalSmtp(vertical.id, vertical.smtpUser || "");
+  /* Login only, nothing sent — the "Verify connection" step. */
+  const verifyVerticalSmtp = () => api.testVerticalSmtp(vertical.id, "");
 
   const deleteVertical = () => setConfirmDel({
     title: `Delete the ${vertical.name} vertical?`,
@@ -747,6 +749,7 @@ export default function App({
           onSave={saveVertical}
           onSaveStages={saveWizardStages}
           onTest={testVerticalSmtp}
+          onVerify={verifyVerticalSmtp}
           onClose={() => { /* finishing the wizard sets setupDone via save */ }} />
       </div>
     );
@@ -1111,6 +1114,7 @@ export default function App({
         onSave={saveVertical}
         onSaveStages={saveWizardStages}
         onTest={testVerticalSmtp}
+          onVerify={verifyVerticalSmtp}
         onDelete={deleteVertical}
         onClose={() => setVerticalSettings(false)} />}
 

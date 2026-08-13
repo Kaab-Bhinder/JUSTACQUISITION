@@ -130,7 +130,7 @@ function guessLink(cols, i) {
 }
 
 export function VerticalSetup({
-  vertical, firstRun, stages, onSave, onSaveStages, onTest, onClose, onDelete,
+  vertical, firstRun, stages, onSave, onSaveStages, onTest, onVerify, onClose, onDelete,
 }) {
   const [tab, setTab] = useState("columns");
   const [err, setErr] = useState("");
@@ -183,7 +183,11 @@ export function VerticalSetup({
   const [smtpUser, setSmtpUser] = useState(vertical.smtpUser || "");
   const [smtpPassword, setSmtpPassword] = useState("");
   const [smtpFrom, setSmtpFrom] = useState(vertical.smtpFrom || "");
+  const [smtpSendAs, setSmtpSendAs] = useState(vertical.smtpSendAs || "");
   const [testState, setTestState] = useState(null);   // {ok, text}
+  /* The From section appears once the credentials have proven themselves —
+     either verified this minute, or saved and working from before. */
+  const [verified, setVerified] = useState(!!vertical.smtpConfigured);
 
   const setCol = (i, patch) => setCols(cs => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const removeCol = (i) => setCols(cs => cs.filter((_, j) => j !== i));
@@ -254,16 +258,61 @@ export function VerticalSetup({
     finally { setBusy(false); }
   };
 
-  const saveSending = async () => {
+  const saveSending = async (fields) => {
     setErr("");
     setBusy(true);
     try {
-      await onSave({ smtpUser, smtpFrom, ...(smtpPassword ? { smtpPassword } : {}) });
-      setSmtpPassword("");
+      await onSave(fields);
+      if (fields.smtpPassword) setSmtpPassword("");
       noteSaved();
       return true;
     } catch (e) { setErr(e.message); return false; }
     finally { setBusy(false); }
+  };
+
+  /* Step one: prove the AUTHENTICATION account — the Gmail address and its
+     app password. Saves, then logs in without sending anything. The From
+     section only appears past this gate. */
+  const verifyAuth = async () => {
+    setTestState(null);
+    if (!(await saveSending({ smtpUser, ...(smtpPassword ? { smtpPassword } : {}) }))) return;
+    setBusy(true);
+    try {
+      const r = await onVerify();
+      if (r.ok) {
+        setVerified(true);
+        setTestState({ ok: true, text: "✓ Gmail authentication verified — set the From address below." });
+      } else {
+        setVerified(false);
+        setTestState({ ok: false, text: r.error });
+      }
+    } catch (e) {
+      setVerified(false);
+      setTestState({ ok: false, text: e.message });
+    } finally { setBusy(false); }
+  };
+
+  /* Step two: the identity recipients see. Saves the Send-As address and the
+     From name, then delivers a real test — from that address — to the
+     account's own inbox: "Gmail accepted the alias" is only proven by a
+     message that arrives wearing it. */
+  const saveFromAndTest = async () => {
+    setTestState(null);
+    const sendAs = smtpSendAs.trim().toLowerCase();
+    if (sendAs && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(sendAs)) {
+      setErr("That From address doesn't look like an email address.");
+      return;
+    }
+    if (!(await saveSending({ smtpFrom, smtpSendAs: sendAs }))) return;
+    setBusy(true);
+    try {
+      const r = await onTest();
+      setTestState(r.ok
+        ? { ok: true, text: `Test email sent from ${r.from || smtpUser} to ${r.to}. Open that inbox and check the From line.` }
+        : { ok: false, text: r.error });
+    } catch (e) {
+      setTestState({ ok: false, text: e.message });
+    } finally { setBusy(false); }
   };
 
   const submit = async () => {
@@ -278,21 +327,6 @@ export function VerticalSetup({
     else await saveSending();
   };
 
-  /* Save first, then test the saved credential — what is tested is exactly
-     what will be used. */
-  const runTest = async () => {
-    setTestState(null);
-    if (!(await saveSending())) return;
-    setBusy(true);
-    try {
-      const r = await onTest();
-      setTestState(r.ok
-        ? { ok: true, text: r.did === "sent" ? `Test email sent to ${r.to}.` : "Signed in to Gmail — sending works." }
-        : { ok: false, text: r.error });
-    } catch (e) {
-      setTestState({ ok: false, text: e.message });
-    } finally { setBusy(false); }
-  };
 
   const tags = mergeTags(validateColumns(cols).columns || cols.filter(c => c.label));
   const insertTag = (tag) => {
@@ -586,9 +620,11 @@ export function VerticalSetup({
           {/* ---- sending ---- */}
           {tab === "sending" && (
             <>
-              <Field label="Gmail address">
+              {/* -- step one: the account that AUTHENTICATES ------------- */}
+              <div style={S.sectionTitle}>Authentication</div>
+              <Field label="Gmail / authentication email">
                 <input style={S.input} value={smtpUser} type="email"
-                  placeholder="outreach@yourdomain.com"
+                  placeholder="youraccount@gmail.com"
                   onChange={e => setSmtpUser(e.target.value)} />
               </Field>
               <Field label="App password (16 characters)">
@@ -598,22 +634,48 @@ export function VerticalSetup({
                     : "the 16-character app password — spaces don't matter"}
                   onChange={e => setSmtpPassword(e.target.value)} />
               </Field>
-              <Field label='"From" name shown to recipients'>
-                <input style={S.input} value={smtpFrom}
-                  placeholder="e.g. Dana at BSBW Partnerships"
-                  onChange={e => setSmtpFrom(e.target.value)} />
-              </Field>
-
               <button className="btn-fill" style={{ ...S.btnFill, padding: "10px 16px" }}
                 disabled={busy || !smtpUser || (!smtpPassword && !vertical.smtpConfigured)}
-                onClick={runTest}>
-                <Send size={13} /> {busy ? "Testing…" : `Save & send a test to ${smtpUser || "the address above"}`}
+                onClick={verifyAuth}>
+                <KeyRound size={13} /> {busy ? "Verifying…" : "Verify connection"}
               </button>
+
               {testState && (
                 <div style={{ ...(testState.ok ? S.infoBox : S.errBox), marginTop: 12 }}>
                   {testState.ok ? <Check size={14} /> : <AlertTriangle size={15} />}
                   <span>{testState.text}</span>
                 </div>
+              )}
+
+              {/* -- step two: the identity recipients SEE ----------------
+                  Only past a working login. The Send-As address is a Gmail
+                  "Send mail as" alias of the account above — an identity,
+                  not an account: it has no password and is never asked for
+                  one. Empty sends as the account itself, exactly as before. */}
+              {verified && (
+                <>
+                  <div style={{ ...S.sectionTitle, marginTop: 22 }}>From — what recipients see</div>
+                  <Field label="From / Send-As email (optional)">
+                    <input style={S.input} value={smtpSendAs} type="email"
+                      placeholder={`leave empty to send as ${smtpUser || "the account above"}`}
+                      onChange={e => setSmtpSendAs(e.target.value)} />
+                    <div style={S.auHint}>
+                      Must be a verified alias of the account above — Gmail →
+                      Settings → Accounts → “Send mail as”. Gmail rejects
+                      anything unverified by sending as the account instead.
+                    </div>
+                  </Field>
+                  <Field label="From name">
+                    <input style={S.input} value={smtpFrom}
+                      placeholder="e.g. Wahaj Shah"
+                      onChange={e => setSmtpFrom(e.target.value)} />
+                  </Field>
+                  <button className="btn-fill" style={{ ...S.btnFill, padding: "10px 16px" }}
+                    disabled={busy}
+                    onClick={saveFromAndTest}>
+                    <Send size={13} /> {busy ? "Sending…" : `Save & send a test to ${smtpUser || "yourself"}`}
+                  </button>
+                </>
               )}
 
               <div style={{ ...S.infoBox, marginTop: 16 }}>

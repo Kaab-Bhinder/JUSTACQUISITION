@@ -48,7 +48,7 @@ export function SendPreview({ c, r, vertical, org, credsReady, onSend, onCancel 
           <div style={S.composerTo}>
             <span style={S.toLabel}>From</span>
             <span style={S.toValue}>
-              {vertical.smtpFrom ? `${vertical.smtpFrom} · ` : ""}{vertical.smtpUser || "not set"}
+              {vertical.smtpFrom ? `${vertical.smtpFrom} · ` : ""}{vertical.smtpSendAs || vertical.smtpUser || "not set"}
             </span>
           </div>
           <div style={S.composerTo}>

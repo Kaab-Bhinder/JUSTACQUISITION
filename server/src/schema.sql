@@ -159,6 +159,13 @@ CREATE TABLE IF NOT EXISTS verticals (
   smtp_user   TEXT    NOT NULL DEFAULT '',
   smtp_secret TEXT    NOT NULL DEFAULT '',
   smtp_from   TEXT    NOT NULL DEFAULT '',
+  -- The From ADDRESS on outgoing mail, when it differs from the account that
+  -- authenticates: a Gmail "Send mail as" alias (wahaj@customdomain.com sent
+  -- through wahajshah93@gmail.com). Empty means "send as the auth account",
+  -- which is the behaviour everything had before this column existed. Not a
+  -- credential — Gmail itself enforces that only verified aliases go out, and
+  -- silently rewrites the From if this isn't one.
+  smtp_send_as TEXT   NOT NULL DEFAULT '',
   -- False until the first-run wizard finishes. Opening an unfinished vertical
   -- resumes the wizard instead of showing an empty board whose columns nobody
   -- has described yet.
@@ -168,6 +175,9 @@ CREATE TABLE IF NOT EXISTS verticals (
   UNIQUE (org_id, slug)
 );
 CREATE INDEX IF NOT EXISTS verticals_org_idx ON verticals (org_id, position, id);
+
+-- Added after verticals shipped; a no-op wherever it already exists.
+ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_send_as TEXT NOT NULL DEFAULT '';
 
 -- ===========================================================================
 -- MIGRATIONS — single tenant to multi tenant

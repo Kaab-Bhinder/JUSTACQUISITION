@@ -136,6 +136,8 @@ verticals.patch("/:id", async (req, res, next) => {
 
     if (b.smtpUser !== undefined) {
       const user = String(b.smtpUser).trim().toLowerCase();
+      /* Clearing the account clears what hangs off it. */
+      if (!user) set("smtp_send_as", "");
       if (user && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user))
         return res.status(400).json({ error: "That doesn't look like an email address." });
       set("smtp_user", user);
@@ -150,6 +152,18 @@ verticals.patch("/:id", async (req, res, next) => {
       if (pw) set("smtp_secret", seal(pw));
     }
     if (b.smtpFrom !== undefined) set("smtp_from", String(b.smtpFrom).trim().slice(0, 100));
+
+    /* The Send-As address: a Gmail "Send mail as" alias, NOT a second account
+       — it authenticates with nothing and never asks for a password. Empty
+       reverts to sending as the auth account. Must at least look like an
+       address; Gmail is the real judge (an unverified alias gets its From
+       silently rewritten to the auth account, which is a safe failure). */
+    if (b.smtpSendAs !== undefined) {
+      const sendAs = String(b.smtpSendAs).trim().toLowerCase();
+      if (sendAs && !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(sendAs))
+        return res.status(400).json({ error: "That From address doesn't look like an email address." });
+      set("smtp_send_as", sendAs);
+    }
 
     if (b.setupDone === true) set("setup_done", true);
 
@@ -185,16 +199,17 @@ verticals.post("/:id/test", async (req, res, next) => {
 
     const to = String(req.body?.to ?? "").trim();
     try {
+      const from = v.smtpSendAs || v.smtpUser;
       if (!to) {
         await smtpVerify(v);
-        return res.json({ ok: true, did: "login" });
+        return res.json({ ok: true, did: "login", user: v.smtpUser });
       }
       await smtpSend(v, {
         to,
         subject: `CRM test — ${v.name} sending account works`,
-        text: "This is the test message from your CRM's sending-account settings. Sending works.",
+        text: `This is the test message from your CRM's sending-account settings. Sending works.\n\nFrom address in use: ${from}`,
       });
-      res.json({ ok: true, did: "sent", to });
+      res.json({ ok: true, did: "sent", to, from });
     } catch (e) {
       res.status(400).json({ ok: false, error: e.message });
     }

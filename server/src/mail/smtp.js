@@ -89,9 +89,14 @@ export async function send(vertical, { to, subject, text, html }) {
   const t = transporterFor(vertical);
   if (!t) throw new Error("This vertical has no sending account. Add one in its settings.");
 
+  /* The From address is the Send-As alias when one is configured, else the
+     account itself — while AUTHENTICATION is always the account. Gmail only
+     honours verified aliases (Settings → Accounts → Send mail as); an
+     unverified one gets rewritten back to the account by Gmail itself. */
+  const address = vertical.smtpSendAs || vertical.smtpUser;
   const from = vertical.smtpFrom
-    ? { name: vertical.smtpFrom, address: vertical.smtpUser }
-    : vertical.smtpUser;
+    ? { name: vertical.smtpFrom, address }
+    : address;
 
   try {
     return await t.sendMail({

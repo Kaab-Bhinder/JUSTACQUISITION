@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, Send, X } from "lucide-react";
 import { S } from "../theme.js";
-import { fillMerge } from "../domain/columns.js";
+import { fillMerge, sendAddress } from "../domain/columns.js";
 import { BodyView } from "./Composer.jsx";
 
 /* ----------------------------------------------------------------------
@@ -48,7 +48,7 @@ export function SendPreview({ c, r, vertical, org, credsReady, onSend, onCancel 
           <div style={S.composerTo}>
             <span style={S.toLabel}>From</span>
             <span style={S.toValue}>
-              {vertical.smtpFrom ? `${vertical.smtpFrom} · ` : ""}{vertical.smtpSendAs || vertical.smtpUser || "not set"}
+              {vertical.smtpFrom ? `${vertical.smtpFrom} · ` : ""}{sendAddress(vertical) || "not set"}
             </span>
           </div>
           <div style={S.composerTo}>

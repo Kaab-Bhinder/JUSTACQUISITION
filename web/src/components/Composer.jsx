@@ -4,7 +4,7 @@ import {
   Reply, Send, X,
 } from "lucide-react";
 import { S, FONT } from "../theme.js";
-import { fillMerge, mergeTags, recipientsFor } from "../domain/columns.js";
+import { fillMerge, mergeTags, recipientsFor, sendAddress } from "../domain/columns.js";
 import { looksHtml } from "../domain/richtext.js";
 import { Field } from "./ui.jsx";
 import { RichText } from "./RichText.jsx";
@@ -206,7 +206,7 @@ export function Composer({ job, vertical, org, stages, onSend, onLog, onCancel }
             <div style={S.composerTo}>
               <span style={S.toLabel}>From</span>
               <span style={S.toValue}>
-                {vertical.smtpFrom ? `${vertical.smtpFrom} · ` : ""}{vertical.smtpSendAs || vertical.smtpUser || "not set"}
+                {vertical.smtpFrom ? `${vertical.smtpFrom} · ` : ""}{sendAddress(vertical) || "not set"}
               </span>
             </div>
             <div style={S.composerTo}>

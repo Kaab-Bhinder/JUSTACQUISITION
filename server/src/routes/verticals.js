@@ -4,7 +4,7 @@ import { DEFAULT_STAGES } from "../constants.js";
 import { requireOrg } from "../auth.js";
 import { validateColumns, mergeTags } from "../columns.js";
 import { seal, tidyAppPassword } from "../crypto.js";
-import { verify as smtpVerify, send as smtpSend } from "../mail/smtp.js";
+import { verify as smtpVerify, send as smtpSend, fromAddressFor } from "../mail/smtp.js";
 
 export const verticals = Router();
 
@@ -153,6 +153,10 @@ verticals.patch("/:id", async (req, res, next) => {
       if (host && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host))
         return res.status(400).json({ error: "That SMTP host doesn't look like a host name (e.g. smtp.stackmail.com)." });
       set("smtp_host", host);
+      /* Send-As is a Gmail-alias concept. On any other server the account
+         sends as itself, so the alias is cleared the moment a custom host
+         arrives — settings can never show an identity that won't send. */
+      if (host && !/gmail\.com$/.test(host)) set("smtp_send_as", "");
     }
     if (b.smtpPort !== undefined) {
       const port = Number(b.smtpPort) || 0;
@@ -223,7 +227,7 @@ verticals.post("/:id/test", async (req, res, next) => {
 
     const to = String(req.body?.to ?? "").trim();
     try {
-      const from = v.smtpSendAs || v.smtpUser;
+      const from = fromAddressFor(v);
       if (!to) {
         await smtpVerify(v);
         return res.json({ ok: true, did: "login", user: v.smtpUser });

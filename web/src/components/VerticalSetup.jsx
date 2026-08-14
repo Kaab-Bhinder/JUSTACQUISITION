@@ -306,7 +306,8 @@ export function VerticalSetup({
      message that arrives wearing it. */
   const saveFromAndTest = async () => {
     setTestState(null);
-    const sendAs = smtpSendAs.trim().toLowerCase();
+    const customHost = !!smtpHost.trim() && !/gmail\.com$/i.test(smtpHost);
+    const sendAs = customHost ? "" : smtpSendAs.trim().toLowerCase();
     if (sendAs && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(sendAs)) {
       setErr("That From address doesn't look like an email address.");
       return;
@@ -691,6 +692,17 @@ export function VerticalSetup({
               {verified && (
                 <>
                   <div style={{ ...S.sectionTitle, marginTop: 22 }}>From — what recipients see</div>
+                  {/* Send-As is a Gmail-alias concept; on a custom host the
+                      account IS the identity, so the field doesn't exist and
+                      no mismatched From can even be configured. */}
+                  {smtpHost.trim() && !/gmail\.com$/i.test(smtpHost) ? (
+                    <div style={{ ...S.infoBox, marginBottom: 14 }}>
+                      <Check size={14} />
+                      <span>Mail goes out as <strong>{smtpUser || "the account above"}</strong> —
+                        on its own mail server, the account is the From address.
+                        Only the name below is adjustable.</span>
+                    </div>
+                  ) : (
                   <Field label="From / Send-As email (optional)">
                     <input style={S.input} value={smtpSendAs} type="email"
                       placeholder={`leave empty to send as ${smtpUser || "the account above"}`}
@@ -701,6 +713,7 @@ export function VerticalSetup({
                       anything unverified by sending as the account instead.
                     </div>
                   </Field>
+                  )}
                   <Field label="From name">
                     <input style={S.input} value={smtpFrom}
                       placeholder="e.g. Wahaj Shah"

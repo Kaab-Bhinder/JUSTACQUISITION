@@ -209,3 +209,10 @@ export function displayValue(col, v) {
   if (col.type === "url") return s.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
   return s;
 }
+
+/* The address outreach actually leaves from — mirrors the server's rule
+   exactly: Send-As only exists on Gmail (the alias registry); on a custom
+   mail host the account sends as itself. Every From display reads this. */
+export const sendAddress = (v) =>
+  ((!v?.smtpHost || /gmail\.com$/i.test(v.smtpHost)) && v?.smtpSendAs) ||
+  v?.smtpUser || "";

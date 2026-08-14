@@ -188,6 +188,12 @@ ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_send_as TEXT NOT NULL DEFAUL
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_host TEXT NOT NULL DEFAULT '';
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_port INTEGER NOT NULL DEFAULT 0;
 
+-- Send-As is a Gmail-alias concept: on a custom mail host the account sends
+-- as itself. Clear any alias stored from before that rule existed, so what
+-- settings show is what sends. Idempotent.
+UPDATE verticals SET smtp_send_as = ''
+ WHERE smtp_host <> '' AND smtp_host NOT LIKE '%gmail.com';
+
 -- ===========================================================================
 -- MIGRATIONS — single tenant to multi tenant
 --

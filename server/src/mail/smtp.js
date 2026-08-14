@@ -43,6 +43,14 @@ const hostFor = (v) => v?.smtpHost || HOST;
 const portFor = (v) => Number(v?.smtpPort) || PORT;
 const isGmail = (v) => /gmail\.com$/i.test(hostFor(v));
 
+/* What the From address actually is. Send-As exists because Gmail keeps a
+   registry of verified aliases; no other host offers that contract, so on a
+   custom server the account sends as itself, always. One function, used by
+   the send path, the test endpoint and (mirrored) the previews — the number
+   the user sees is the number that dials. */
+export const fromAddressFor = (v) =>
+  (isGmail(v) && v?.smtpSendAs) || v?.smtpUser || "";
+
 export function transporterFor(vertical) {
   const user = String(vertical.smtpUser || "").trim();
   const pass = open(vertical.smtpSecret);
@@ -106,11 +114,7 @@ export async function send(vertical, { to, subject, text, html }) {
   const t = transporterFor(vertical);
   if (!t) throw new Error("This vertical has no sending account. Add one in its settings.");
 
-  /* The From address is the Send-As alias when one is configured, else the
-     account itself — while AUTHENTICATION is always the account. Gmail only
-     honours verified aliases (Settings → Accounts → Send mail as); an
-     unverified one gets rewritten back to the account by Gmail itself. */
-  const address = vertical.smtpSendAs || vertical.smtpUser;
+  const address = fromAddressFor(vertical);
   const from = vertical.smtpFrom
     ? { name: vertical.smtpFrom, address }
     : address;

@@ -27,7 +27,7 @@ import { Field } from "./ui.jsx";
 
 const STEPS = ["file", "map", "review"];
 
-export function ImportModal({ vertical, existing, onCancel, onImport }) {
+export function ImportModal({ vertical, existing, progress, onCancel, onImport }) {
   const stages = useStages();
   const columns = vertical.columns || [];
 
@@ -324,11 +324,14 @@ export function ImportModal({ vertical, existing, onCancel, onImport }) {
             </button>
           )}
           {step === "review" && (
-            <button className="btn-fill" style={S.btnFill} disabled={!queue.length} onClick={commit}>
+            <button className="btn-fill" style={S.btnFill}
+              disabled={!queue.length || !!progress} onClick={commit}>
               <Upload size={15} />
-              {result.updates.length
-                ? `Import ${result.ready.length} new · update ${result.updates.length}`
-                : `Import ${queue.length} ${queue.length === 1 ? "row" : "rows"}`}
+              {progress
+                ? `Importing ${progress.done.toLocaleString()} / ${progress.total.toLocaleString()}…`
+                : result.updates.length
+                  ? `Import ${result.ready.length} new · update ${result.updates.length}`
+                  : `Import ${queue.length} ${queue.length === 1 ? "row" : "rows"}`}
             </button>
           )}
         </div>

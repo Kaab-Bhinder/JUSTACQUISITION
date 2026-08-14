@@ -109,6 +109,8 @@ companies.post("/import", async (req, res, next) => {
 
     const { inserted, updated } = await tx(async (client) => {
       const inserted = [], updated = [];
+      const news = [];
+
       for (const r of records) {
         /* A record carrying updateId is a company already on this board: the
            sheet's values merge OVER what's stored (a blank cell never erases
@@ -147,14 +149,63 @@ companies.post("/import", async (req, res, next) => {
           continue;
         }
 
-        const id = await insertCompany(client, req.orgId, req.vertical, {
-          data: r.data || {}, linkedin: r.linkedin,
+        /* New rows are prepared here and written in bulk below. Over a
+           network database, per-row INSERTs are what turns an 8000-row sheet
+           into a half-hour of round trips; three UNNEST statements make it
+           seconds. */
+        const data = cleanData(req.vertical.columns, r.data || {});
+        const p = project(req.vertical.columns, data);
+        if (!p.name) continue;
+        news.push({
+          p, data,
+          linkedin: cleanWeb(r.linkedin),
           stage: valid.has(r.stage) ? r.stage : stages[0].id,
-          stageSince: r.stageSince,
-          history: [{ t: "Imported from spreadsheet" }],
+          since: r.stageSince || null,
         });
-        if (id !== null) inserted.push(id);
       }
+
+      if (news.length) {
+        /* One INSERT for every company. Ids come back in input order: the
+           sequence is consumed row-by-row inside a single statement. */
+        const { rows: idRows } = await client.query(
+          `INSERT INTO companies (org_id, vertical_id, name, data, website, linkedin,
+                                  stage, stage_since, notes)
+           SELECT $1, $2, u.name, u.data, u.website, u.linkedin, u.stage,
+                  COALESCE(u.since, CURRENT_DATE), u.notes
+             FROM UNNEST($3::text[], $4::jsonb[], $5::text[], $6::text[],
+                         $7::text[], $8::date[], $9::text[])
+                  AS u(name, data, website, linkedin, stage, since, notes)
+           RETURNING id`,
+          [req.orgId, req.verticalId,
+           news.map(n => n.p.name),
+           news.map(n => JSON.stringify(n.data)),
+           news.map(n => n.p.website),
+           news.map(n => n.linkedin),
+           news.map(n => n.stage),
+           news.map(n => n.since),
+           news.map(n => n.p.notes)]);
+
+        /* One INSERT for every contact of every company, one for history. */
+        const kc = { id: [], name: [], role: [], email: [], phone: [], pos: [] };
+        idRows.forEach((row, i) => {
+          inserted.push(row.id);
+          news[i].p.contacts.forEach((k, j) => {
+            kc.id.push(row.id); kc.name.push(k.name); kc.role.push(k.role);
+            kc.email.push(k.email); kc.phone.push(k.phone); kc.pos.push(j);
+          });
+        });
+        if (kc.id.length)
+          await client.query(
+            `INSERT INTO contacts (company_id, name, role, email, phone, position)
+             SELECT * FROM UNNEST($1::int[], $2::text[], $3::text[], $4::text[],
+                                  $5::text[], $6::int[])`,
+            [kc.id, kc.name, kc.role, kc.email, kc.phone, kc.pos]);
+        await client.query(
+          `INSERT INTO history (company_id, t)
+           SELECT unnest($1::int[]), 'Imported from spreadsheet'`,
+          [inserted]);
+      }
+
       return { inserted, updated };
     });
 

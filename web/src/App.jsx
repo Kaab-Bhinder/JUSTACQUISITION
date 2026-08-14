@@ -447,14 +447,34 @@ export default function App({
     }),
   });
 
-  const commitImport = guard(async (recs) => {
-    const { companies: rows, count, added = count, updated = 0 } = await api.importCompanies(recs);
-    merge(rows);
-    setImportOpen(false);
-    flash(updated
-      ? `${added} new · ${updated} updated — no duplicates`
-      : `${count} ${count === 1 ? "row" : "rows"} imported`);
-  });
+  /* Big sheets go up in slices: one request per 500 rows keeps every request
+     under body-size caps and proxy timeouts, and the board fills as slices
+     land. A failure mid-way loses nothing — re-running the same import
+     resumes safely, because rows already in become updates, not duplicates. */
+  const [importProg, setImportProg] = useState(null);   // {done,total} while importing
+  const commitImport = async (recs) => {
+    const CHUNK = 500;
+    let added = 0, updated = 0;
+    setImportProg({ done: 0, total: recs.length });
+    try {
+      for (let i = 0; i < recs.length; i += CHUNK) {
+        const slice = recs.slice(i, i + CHUNK);
+        const r = await api.importCompanies(slice);
+        merge(r.companies);
+        added += r.added ?? r.count ?? 0;
+        updated += r.updated ?? 0;
+        setImportProg({ done: Math.min(i + CHUNK, recs.length), total: recs.length });
+      }
+      setImportOpen(false);
+      flash(updated
+        ? `${added.toLocaleString()} new · ${updated.toLocaleString()} updated — no duplicates`
+        : `${added.toLocaleString()} rows imported`);
+    } catch (e) {
+      flash(`${e.message} — ${added + updated} of ${recs.length} made it in. Run the same import again to finish: existing rows update, never duplicate.`);
+    } finally {
+      setImportProg(null);
+    }
+  };
 
   const counts = { pipeline: filtered.length, inbox: threads.length };
 
@@ -1103,7 +1123,9 @@ export default function App({
         onSave={editing ? saveEdit : saveNew} onClose={closeForm} />}
 
       {importOpen && <ImportModal vertical={vertical} existing={companies}
-        onCancel={() => setImportOpen(false)} onImport={commitImport} />}
+        progress={importProg}
+        onCancel={() => { if (!importProg) setImportOpen(false); }}
+        onImport={commitImport} />}
 
       {orgSettings && <OrgForm org={org}
         onSave={saveOrg} onDelete={deleteOrganization}

@@ -143,7 +143,8 @@ export const getCompanies = () => get("/companies", inVertical);
    A row is `data` — values keyed by the vertical's own column keys. */
 export const createCompany = (data) => post("/companies", data, inVertical);
 export const updateCompany = (id, patch) => req("PATCH", `/companies/${id}`, patch, inVertical);
-export const importCompanies = (records) => post("/companies/import", { records }, inVertical);
+export const importCompanies = (records) =>
+  post("/companies/import", { records }, { ...inVertical, timeoutMs: 180000 });
 export const advance = (ids) => post("/companies/advance", { ids }, inVertical);
 export const moveToStage = (id, stage) => post(`/companies/${id}/move`, { stage }, inVertical);
 export const stamp = (ids, to) => post("/companies/stamp", { ids, to }, inVertical);

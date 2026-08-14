@@ -166,6 +166,13 @@ CREATE TABLE IF NOT EXISTS verticals (
   -- credential — Gmail itself enforces that only verified aliases go out, and
   -- silently rewrites the From if this isn't one.
   smtp_send_as TEXT   NOT NULL DEFAULT '',
+  -- Which mail server this account authenticates against. Empty means the
+  -- installation default (Gmail). A domain mailbox — wahaj@customdomain.com
+  -- on its host's own SMTP — sets these, and the From domain then matches
+  -- the authenticating server: no "via gmail.com" annotation, and the
+  -- domain's own SPF applies. Port 0 = default for the host (465).
+  smtp_host   TEXT    NOT NULL DEFAULT '',
+  smtp_port   INTEGER NOT NULL DEFAULT 0,
   -- False until the first-run wizard finishes. Opening an unfinished vertical
   -- resumes the wizard instead of showing an empty board whose columns nobody
   -- has described yet.
@@ -176,8 +183,10 @@ CREATE TABLE IF NOT EXISTS verticals (
 );
 CREATE INDEX IF NOT EXISTS verticals_org_idx ON verticals (org_id, position, id);
 
--- Added after verticals shipped; a no-op wherever it already exists.
+-- Added after verticals shipped; no-ops wherever they already exist.
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_send_as TEXT NOT NULL DEFAULT '';
+ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_host TEXT NOT NULL DEFAULT '';
+ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_port INTEGER NOT NULL DEFAULT 0;
 
 -- ===========================================================================
 -- MIGRATIONS — single tenant to multi tenant

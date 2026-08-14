@@ -37,7 +37,7 @@ export const envAccount = () => imapConfigured()
   : null;
 
 const settings = (account) => ({
-  host: process.env.IMAP_HOST || "imap.gmail.com",
+  host: account.imapHost || process.env.IMAP_HOST || "imap.gmail.com",
   port: Number(process.env.IMAP_PORT || 993),
   secure: String(process.env.IMAP_SECURE ?? "true") !== "false",
   auth: {

@@ -184,6 +184,8 @@ export function VerticalSetup({
   const [smtpPassword, setSmtpPassword] = useState("");
   const [smtpFrom, setSmtpFrom] = useState(vertical.smtpFrom || "");
   const [smtpSendAs, setSmtpSendAs] = useState(vertical.smtpSendAs || "");
+  const [smtpHost, setSmtpHost] = useState(vertical.smtpHost || "");
+  const [smtpPort, setSmtpPort] = useState(vertical.smtpPort || "");
   const [testTo, setTestTo] = useState("");
   const [testState, setTestState] = useState(null);   // {ok, text}
   /* The From section appears once the credentials have proven themselves —
@@ -276,7 +278,12 @@ export function VerticalSetup({
      section only appears past this gate. */
   const verifyAuth = async () => {
     setTestState(null);
-    if (!(await saveSending({ smtpUser, ...(smtpPassword ? { smtpPassword } : {}) }))) return;
+    if (!(await saveSending({
+      smtpUser,
+      smtpHost: smtpHost.trim(),
+      smtpPort: Number(smtpPort) || 0,
+      ...(smtpPassword ? { smtpPassword } : {}),
+    }))) return;
     setBusy(true);
     try {
       const r = await onVerify();
@@ -628,18 +635,41 @@ export function VerticalSetup({
             <>
               {/* -- step one: the account that AUTHENTICATES ------------- */}
               <div style={S.sectionTitle}>Authentication</div>
-              <Field label="Gmail / authentication email">
+              <Field label="Email address the account signs in with">
                 <input style={S.input} value={smtpUser} type="email"
-                  placeholder="youraccount@gmail.com"
+                  placeholder="youraccount@gmail.com, or wahaj@yourdomain.com"
                   onChange={e => setSmtpUser(e.target.value)} />
               </Field>
-              <Field label="App password (16 characters)">
+              <Field label={/gmail\.com$/i.test(smtpHost) || !smtpHost.trim()
+                ? "App password (16 characters)" : "Mailbox password"}>
                 <input style={S.input} value={smtpPassword} type="password"
                   placeholder={vertical.smtpConfigured
-                    ? "•••• •••• •••• ••••  (saved — type to replace)"
-                    : "the 16-character app password — spaces don't matter"}
+                    ? "••••••••  (saved — type to replace)"
+                    : !smtpHost.trim()
+                      ? "the 16-character app password — spaces don't matter"
+                      : "the mailbox password on that server"}
                   onChange={e => setSmtpPassword(e.target.value)} />
               </Field>
+
+              {/* Which server. Empty = Gmail. A domain mailbox names its own
+                  host and the From domain then matches the sender — which is
+                  what removes Gmail's "via" tag at the receiving end. */}
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 2 }}>
+                  <Field label="SMTP server (optional)">
+                    <input style={S.input} value={smtpHost}
+                      placeholder="empty = smtp.gmail.com · e.g. smtp.stackmail.com"
+                      onChange={e => setSmtpHost(e.target.value)} />
+                  </Field>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Field label="Port">
+                    <input style={S.input} value={smtpPort} type="number"
+                      placeholder="465"
+                      onChange={e => setSmtpPort(e.target.value)} />
+                  </Field>
+                </div>
+              </div>
               <button className="btn-fill" style={{ ...S.btnFill, padding: "10px 16px" }}
                 disabled={busy || !smtpUser || (!smtpPassword && !vertical.smtpConfigured)}
                 onClick={verifyAuth}>

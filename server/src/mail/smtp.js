@@ -34,12 +34,22 @@ const pools = new Map();
 const HOST = process.env.SMTP_HOST || "smtp.gmail.com";
 const PORT = Number(process.env.SMTP_PORT || 465);
 
+/* The server an account authenticates against is the account's own fact:
+   empty means the installation default (Gmail), a domain mailbox names its
+   host — smtp.stackmail.com for a Stackmail-hosted address — and the From
+   domain then matches the authenticating server, which is what removes the
+   "via gmail.com" annotation at the receiving end. */
+const hostFor = (v) => v?.smtpHost || HOST;
+const portFor = (v) => Number(v?.smtpPort) || PORT;
+const isGmail = (v) => /gmail\.com$/i.test(hostFor(v));
+
 export function transporterFor(vertical) {
   const user = String(vertical.smtpUser || "").trim();
   const pass = open(vertical.smtpSecret);
   if (!user || !pass) return null;
 
-  const key = `${user}\n${vertical.smtpSecret}`;
+  const host = hostFor(vertical), port = portFor(vertical);
+  const key = `${user}\n${host}:${port}\n${vertical.smtpSecret}`;
   if (pools.has(key)) return pools.get(key);
 
   /* A changed credential must not keep answering from the old login. */
@@ -48,9 +58,9 @@ export function transporterFor(vertical) {
   }
 
   const t = nodemailer.createTransport({
-    host: HOST,
-    port: PORT,
-    secure: PORT === 465,
+    host,
+    port,
+    secure: port === 465,
     auth: { user, pass },
     pool: true,
     maxConnections: 2,
@@ -74,12 +84,12 @@ export function transporterFor(vertical) {
    mentions neither Gmail nor app passwords. */
 export async function verify(vertical) {
   const t = transporterFor(vertical);
-  if (!t) throw new Error("Enter the Gmail address and its app password first.");
+  if (!t) throw new Error("Enter the email address and its password first.");
   try {
     await t.verify();
     return true;
   } catch (e) {
-    throw new Error(friendly(e));
+    throw new Error(friendly(e, vertical));
   }
 }
 
@@ -111,21 +121,24 @@ export async function send(vertical, { to, subject, text, html }) {
       ...(html ? { html, attachDataUrls: true } : {}),
     });
   } catch (e) {
-    throw new Error(friendly(e));
+    throw new Error(friendly(e, vertical));
   }
 }
 
 /* The errors people actually hit, said in words that name the fix. Everything
    else passes through — an unexpected message is better verbatim than
    paraphrased wrongly. */
-function friendly(e) {
+function friendly(e, vertical) {
   const s = String(e?.message || e);
-  if (e?.code === "EAUTH" || /535|username and password not accepted/i.test(s))
-    return "Gmail refused that sign-in. Check the address, and use an app password (Google Account → Security → 2-Step Verification → App passwords) — not the account password.";
+  const host = hostFor(vertical), port = portFor(vertical);
+  if (e?.code === "EAUTH" || /535|username and password not accepted|authentication failed/i.test(s))
+    return isGmail(vertical)
+      ? "Gmail refused that sign-in. Check the address, and use an app password (Google Account → Security → 2-Step Verification → App passwords) — not the account password."
+      : `${host} refused that sign-in. Check the username and the mailbox password.`;
   if (e?.code === "EDNS" || e?.code === "ECONNECTION" || e?.code === "ETIMEDOUT" ||
       /timed? ?out/i.test(s))
-    return `Couldn't reach ${HOST} on port ${PORT} from this server. If the CRM is hosted on Render's FREE plan, that's the cause — free instances block outbound email ports (465/587); upgrade the service to Starter, or host the API somewhere SMTP is allowed. Otherwise check the network/firewall.`;
+    return `Couldn't reach ${host} on port ${port} from this server. If the CRM is hosted on Render's FREE plan, that's the cause — free instances block outbound email ports (465/587); upgrade the service, or host the API somewhere SMTP is allowed. Otherwise check the host name and the network.`;
   if (/daily.*limit|quota|421|too many/i.test(s))
-    return "Gmail is rate-limiting this account. Wait a while before sending more.";
+    return "The mail server is rate-limiting this account. Wait a while before sending more.";
   return s;
 }

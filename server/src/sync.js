@@ -43,7 +43,8 @@ export async function mailAccounts() {
   if (env) { out.push(env); seen.add(env.user.toLowerCase()); }
 
   const { rows } = await query(
-    `SELECT DISTINCT smtp_user AS "user", smtp_secret AS secret
+    `SELECT DISTINCT smtp_user AS "user", smtp_secret AS secret,
+            smtp_host AS "smtpHost"
        FROM verticals WHERE smtp_user <> '' AND smtp_secret <> ''`);
   for (const r of rows) {
     const key = r.user.toLowerCase();
@@ -51,7 +52,14 @@ export async function mailAccounts() {
     const pass = openSecret(r.secret);
     if (!pass) continue;               // sealed under a lost key — unusable
     seen.add(key);
-    out.push({ user: r.user, pass, source: "vertical sending account" });
+    /* An account on its own mail host reads replies from that host too:
+       smtp.example.com almost universally pairs with imap.example.com.
+       Gmail-hosted accounts keep the default. */
+    const custom = r.smtpHost && !/gmail\.com$/i.test(r.smtpHost);
+    out.push({
+      user: r.user, pass, source: "vertical sending account",
+      ...(custom ? { imapHost: r.smtpHost.replace(/^smtp\./i, "imap.") } : {}),
+    });
   }
   return out;
 }

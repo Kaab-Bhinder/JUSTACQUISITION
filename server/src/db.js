@@ -124,6 +124,7 @@ const VERTICAL_LIST = `
          v.columns, v.subject, v.body,
          v.smtp_user AS "smtpUser", v.smtp_from AS "smtpFrom",
          v.smtp_send_as AS "smtpSendAs",
+         v.smtp_host AS "smtpHost", v.smtp_port AS "smtpPort",
          (v.smtp_secret <> '') AS "smtpConfigured",
          v.setup_done AS "setupDone",
          v.position, v.created_at AS "createdAt",
@@ -154,6 +155,7 @@ export async function verticalAuth(id, orgId, client = pool) {
   const { rows } = await client.query(
     `SELECT id, name, smtp_user AS "smtpUser", smtp_from AS "smtpFrom",
             smtp_send_as AS "smtpSendAs",
+            smtp_host AS "smtpHost", smtp_port AS "smtpPort",
             smtp_secret AS "smtpSecret", columns, subject, body
        FROM verticals WHERE id = $1 AND org_id = $2`, [id, orgId]);
   return rows[0] || null;

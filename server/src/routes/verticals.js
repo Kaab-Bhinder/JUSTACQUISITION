@@ -145,8 +145,32 @@ verticals.patch("/:id", async (req, res, next) => {
          no account is a credential with no owner, kept for no reason. */
       if (!user) set("smtp_secret", "");
     }
-    if (b.smtpPassword !== undefined) {
-      const pw = tidyAppPassword(b.smtpPassword);
+    /* Which mail server the account signs into. Empty = the Gmail default.
+       A hostname, not a URL — and never logged or echoed anywhere secrets
+       could ride along. */
+    if (b.smtpHost !== undefined) {
+      const host = String(b.smtpHost).trim().toLowerCase();
+      if (host && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host))
+        return res.status(400).json({ error: "That SMTP host doesn't look like a host name (e.g. smtp.stackmail.com)." });
+      set("smtp_host", host);
+    }
+    if (b.smtpPort !== undefined) {
+      const port = Number(b.smtpPort) || 0;
+      if (port && (!Number.isInteger(port) || port < 1 || port > 65535))
+        return res.status(400).json({ error: "That SMTP port isn't a port number." });
+      set("smtp_port", port);
+    }
+
+    if (b.smtpPassword !== undefined && String(b.smtpPassword) !== "") {
+      /* Gmail app passwords are shown as "abcd efgh ijkl mnop" and pasted
+         with the spaces — strip them. Any other provider's mailbox password
+         is taken exactly as typed: it isn't ours to reshape. */
+      const { rows: [cur] } = await query(
+        `SELECT smtp_host FROM verticals WHERE id = $1 AND org_id = $2`, [id, req.orgId]);
+      const host = b.smtpHost !== undefined
+        ? String(b.smtpHost).trim().toLowerCase() : (cur?.smtp_host || "");
+      const gmailish = !host || /gmail\.com$/.test(host);
+      const pw = gmailish ? tidyAppPassword(b.smtpPassword) : String(b.smtpPassword);
       /* Empty means "leave it" so the settings form can save around it; the
          explicit way to remove a credential is clearing the address above. */
       if (pw) set("smtp_secret", seal(pw));

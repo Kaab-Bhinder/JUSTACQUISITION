@@ -431,7 +431,7 @@ export default function App({
     setVerticalSettings(true);
   });
 
-  const testVerticalSmtp = () => api.testVerticalSmtp(vertical.id, vertical.smtpUser || "");
+  const testVerticalSmtp = (to) => api.testVerticalSmtp(vertical.id, to || vertical.smtpUser || "");
   /* Login only, nothing sent — the "Verify connection" step. */
   const verifyVerticalSmtp = () => api.testVerticalSmtp(vertical.id, "");
 

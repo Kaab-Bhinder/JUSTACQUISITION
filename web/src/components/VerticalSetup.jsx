@@ -184,6 +184,7 @@ export function VerticalSetup({
   const [smtpPassword, setSmtpPassword] = useState("");
   const [smtpFrom, setSmtpFrom] = useState(vertical.smtpFrom || "");
   const [smtpSendAs, setSmtpSendAs] = useState(vertical.smtpSendAs || "");
+  const [testTo, setTestTo] = useState("");
   const [testState, setTestState] = useState(null);   // {ok, text}
   /* The From section appears once the credentials have proven themselves —
      either verified this minute, or saved and working from before. */
@@ -303,10 +304,15 @@ export function VerticalSetup({
       setErr("That From address doesn't look like an email address.");
       return;
     }
+    const dest = testTo.trim().toLowerCase() || smtpUser;
+    if (dest && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(dest)) {
+      setErr("That test address doesn't look like an email address.");
+      return;
+    }
     if (!(await saveSending({ smtpFrom, smtpSendAs: sendAs }))) return;
     setBusy(true);
     try {
-      const r = await onTest();
+      const r = await onTest(dest);
       setTestState(r.ok
         ? { ok: true, text: `Test email sent from ${r.from || smtpUser} to ${r.to}. Open that inbox and check the From line.` }
         : { ok: false, text: r.error });
@@ -670,10 +676,19 @@ export function VerticalSetup({
                       placeholder="e.g. Wahaj Shah"
                       onChange={e => setSmtpFrom(e.target.value)} />
                   </Field>
+                  <Field label="Send the test to">
+                    <input style={S.input} value={testTo} type="email"
+                      placeholder={smtpUser || "any inbox you can open"}
+                      onChange={e => setTestTo(e.target.value)} />
+                    <div style={S.auHint}>
+                      Any inbox you can open — checking the From line from a
+                      different account is the honest test.
+                    </div>
+                  </Field>
                   <button className="btn-fill" style={{ ...S.btnFill, padding: "10px 16px" }}
                     disabled={busy}
                     onClick={saveFromAndTest}>
-                    <Send size={13} /> {busy ? "Sending…" : `Save & send a test to ${smtpUser || "yourself"}`}
+                    <Send size={13} /> {busy ? "Sending…" : `Save & send a test to ${testTo.trim() || smtpUser || "yourself"}`}
                   </button>
                 </>
               )}

@@ -205,6 +205,19 @@ UPDATE verticals v SET replied_stage = (
   SELECT 1 FROM stages s WHERE s.vertical_id = v.id
     AND (s.id ~* 'respond|replied' OR s.label ~* 'respond|replied'));
 
+-- Leads stranded in the legacy 'responded' state — written by the old
+-- filing rule into a stage no pipeline contains — move into their
+-- vertical's marked reply-landing stage where one exists. Where none does,
+-- they stay put for the Update-stage dropdown to rescue by hand. Idempotent:
+-- 'responded' never matches a real stage id the wizard generates.
+UPDATE companies c SET stage = v.replied_stage, updated_at = now()
+  FROM verticals v
+ WHERE v.id = c.vertical_id
+   AND c.stage = 'responded'
+   AND v.replied_stage <> ''
+   AND NOT EXISTS (SELECT 1 FROM stages s
+                    WHERE s.vertical_id = v.id AND s.id = 'responded');
+
 -- Send-As is a Gmail-alias concept: on a custom mail host the account sends
 -- as itself. Clear any alias stored from before that rule existed, so what
 -- settings show is what sends. Idempotent.

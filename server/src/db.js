@@ -125,6 +125,7 @@ const VERTICAL_LIST = `
          v.smtp_user AS "smtpUser", v.smtp_from AS "smtpFrom",
          v.smtp_send_as AS "smtpSendAs",
          v.smtp_host AS "smtpHost", v.smtp_port AS "smtpPort",
+         v.replied_stage AS "repliedStage",
          (v.smtp_secret <> '') AS "smtpConfigured",
          v.setup_done AS "setupDone",
          v.position, v.created_at AS "createdAt",

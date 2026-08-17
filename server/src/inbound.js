@@ -53,31 +53,42 @@ export async function fileInbound({
        addr, subject || "(no subject)", body || "", read]);
     if (!msg) return null;                       // already filed
 
-    /* Only a company still working through the funnel gets promoted. One that
-       already reached Meeting or Closed must not be dragged backwards by a
-       stray reply — a "thanks, talk soon" after signing shouldn't reopen the
-       deal. It's still filed on the thread either way.
+    /* Where does a replying lead go? To the stage its own vertical marked as
+       "replies land here" — and only FORWARD. A lead already at or past that
+       stage (in a Meeting, Won) stays exactly where it is: a second reply, a
+       "thanks, talk soon" after signing, none of it can drag a deal
+       backwards. No marked stage means replies file and flag but never move
+       anything. Positions come from the vertical's own pipeline, so every
+       tenant's own ordering is the law. */
+    const { rows: [move] } = await client.query(
+      `SELECT t.id AS "toStage", t.label AS "toLabel",
+              cur.position AS "curPos", t.position AS "toPos"
+         FROM companies c
+         JOIN verticals v ON v.id = c.vertical_id
+         JOIN stages t   ON t.vertical_id = v.id AND t.id = v.replied_stage
+         LEFT JOIN stages cur ON cur.vertical_id = v.id AND cur.id = c.stage
+        WHERE c.id = $1`, [hit.id]);
 
-       The stage lookup is scoped to the company's own organization: 'fu2' is
-       a stage in most tenants, and asking globally would call a company in the
-       funnel when its own tenant has no such stage. */
-    const { rows: [inFunnel] } = await client.query(
-      `SELECT 1 FROM stages WHERE id = $1 AND org_id = $2`, [hit.stage, hit.org_id]);
-
-    if (inFunnel) {
+    const promote = !!move && move.curPos !== null && move.curPos < move.toPos;
+    if (promote) {
       await client.query(
         `UPDATE companies
-            SET stage = 'responded',
-                stage_since  = COALESCE($1::date, CURRENT_DATE),
-                responded_on = COALESCE($1::date, CURRENT_DATE),
+            SET stage = $1,
+                stage_since  = COALESCE($2::date, CURRENT_DATE),
+                responded_on = COALESCE(responded_on, COALESCE($2::date, CURRENT_DATE)),
                 updated_at = now()
-          WHERE id = $2`, [at || null, hit.id]);
+          WHERE id = $3`, [move.toStage, at || null, hit.id]);
+    } else {
+      /* The fact of the first reply is still worth stamping. */
+      await client.query(
+        `UPDATE companies SET responded_on = COALESCE(responded_on, COALESCE($1::date, CURRENT_DATE)),
+                updated_at = now() WHERE id = $2`, [at || null, hit.id]);
     }
 
     await client.query(
       `INSERT INTO history (company_id, d, t) VALUES ($1, COALESCE($2::date, CURRENT_DATE), $3)`,
       [hit.id, at || null,
-       inFunnel ? "Replied — moved to Responded" : "Reply received"]);
+       promote ? `Replied — moved to ${move.toLabel}` : "Reply received"]);
 
     return hit.id;
   });

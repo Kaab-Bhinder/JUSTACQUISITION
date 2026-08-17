@@ -173,6 +173,7 @@ export function VerticalSetup({
 
   /* ---- pipeline ---- */
   const [pipe, setPipe] = useState(() => (stages || []).map(s => ({ ...s })));
+  const [repliedStage, setRepliedStage] = useState(vertical.repliedStage || "");
 
   /* ---- script ---- */
   const [subject, setSubject] = useState(vertical.subject || "");
@@ -246,7 +247,12 @@ export function VerticalSetup({
     setBusy(true);
     try {
       await onSaveStages(pipe);
-      if (finish) await onSave({ setupDone: true });
+      /* The reply-landing mark rides with the pipeline it points into; a
+         mark whose stage was just deleted is dropped rather than kept
+         dangling. */
+      const rs = pipe.some(x => x.id === repliedStage) ? repliedStage : "";
+      await onSave({ repliedStage: rs, ...(finish ? { setupDone: true } : {}) });
+      if (rs !== repliedStage) setRepliedStage(rs);
       noteSaved();
       return true;
     } catch (e) { setErr(e.message); return false; }
@@ -586,6 +592,17 @@ export function VerticalSetup({
                     <input style={{ ...S.input, flex: "1.6 1 0" }} value={s.sub}
                       placeholder="Sub-line (optional)"
                       onChange={e => setStage(i, { sub: e.target.value })} />
+                    {/* One stage may catch replies. Toggling on steals the
+                        mark; a lead only ever moves FORWARD into it. */}
+                    <button type="button" className="chip"
+                      title="Replying leads move INTO this stage (never backwards out of later ones)"
+                      aria-pressed={repliedStage === s.id}
+                      onClick={() => setRepliedStage(r => (r === s.id ? "" : s.id))}
+                      style={{ ...S.chip, ...(repliedStage === s.id ? S.chipOn : {}),
+                        fontSize: 11.5, padding: "7px 10px", flexShrink: 0 }}>
+                      <MailIcon size={11} style={{ verticalAlign: -1.5, marginRight: 3 }} />
+                      replies land here
+                    </button>
                     <button type="button" className="row-btn" style={{ ...S.rowBtn, padding: "8px 9px" }}
                       aria-label={`Remove ${s.label || `stage ${i + 1}`}`}
                       disabled={pipe.length <= 1}
@@ -601,8 +618,10 @@ export function VerticalSetup({
               <div style={{ ...S.infoBox, marginTop: 16 }}>
                 <Check size={14} />
                 <span>Companies enter at <strong>{pipe[0]?.label || "the first stage"}</strong> and
-                  move down the list with each send. Responded / Meeting / Won sit
-                  after the funnel and are always there.</span>
+                  move down the list with each send.
+                  {repliedStage
+                    ? <> A reply moves a lead into <strong>{pipe.find(x => x.id === repliedStage)?.label || repliedStage}</strong> — forward only, never out of a later stage.</>
+                    : <> Mark a stage with <strong>replies land here</strong> and replying leads move into it automatically — forward only.</>}</span>
               </div>
             </>
           )}

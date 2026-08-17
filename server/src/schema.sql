@@ -173,6 +173,11 @@ CREATE TABLE IF NOT EXISTS verticals (
   -- domain's own SPF applies. Port 0 = default for the host (465).
   smtp_host   TEXT    NOT NULL DEFAULT '',
   smtp_port   INTEGER NOT NULL DEFAULT 0,
+  -- Which of this vertical's own stages a replying lead moves INTO — and
+  -- only ever forward: a lead already at or past it stays put, so a second
+  -- reply can never drag a Meeting back to Responded. Empty = replies file
+  -- on the thread and flag unread, but never move a stage.
+  replied_stage TEXT  NOT NULL DEFAULT '',
   -- False until the first-run wizard finishes. Opening an unfinished vertical
   -- resumes the wizard instead of showing an empty board whose columns nobody
   -- has described yet.
@@ -187,6 +192,18 @@ CREATE INDEX IF NOT EXISTS verticals_org_idx ON verticals (org_id, position, id)
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_send_as TEXT NOT NULL DEFAULT '';
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_host TEXT NOT NULL DEFAULT '';
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_port INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE verticals ADD COLUMN IF NOT EXISTS replied_stage TEXT NOT NULL DEFAULT '';
+
+-- Seed the reply-landing stage where a pipeline plainly has one: a stage
+-- whose id or label says "responded"/"replied". Verticals without one keep
+-- '' — replies file and flag, nothing moves until the owner marks a stage.
+UPDATE verticals v SET replied_stage = (
+  SELECT s.id FROM stages s WHERE s.vertical_id = v.id
+    AND (s.id ~* 'respond|replied' OR s.label ~* 'respond|replied')
+  ORDER BY s.position LIMIT 1)
+ WHERE replied_stage = '' AND EXISTS (
+  SELECT 1 FROM stages s WHERE s.vertical_id = v.id
+    AND (s.id ~* 'respond|replied' OR s.label ~* 'respond|replied'));
 
 -- Send-As is a Gmail-alias concept: on a custom mail host the account sends
 -- as itself. Clear any alias stored from before that rule existed, so what

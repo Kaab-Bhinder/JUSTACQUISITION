@@ -193,6 +193,12 @@ verticals.patch("/:id", async (req, res, next) => {
       set("smtp_send_as", sendAs);
     }
 
+    /* Which of this vertical's stages a replying lead lands in. Loosely
+       validated here — the filing query joins against the real stages table,
+       so a stale id simply means "no move", never a broken file. */
+    if (b.repliedStage !== undefined)
+      set("replied_stage", String(b.repliedStage).trim().slice(0, 64));
+
     if (b.setupDone === true) set("setup_done", true);
 
     if (!sets.length) return res.status(400).json({ error: "Nothing to change." });

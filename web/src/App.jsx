@@ -507,6 +507,8 @@ export default function App({
     return v;
   });
   const [gapSec, setGapSec] = useState(30);
+  const [rangeFrom, setRangeFrom] = useState("");  // 1-based, inclusive; empty = 1
+  const [rangeTo, setRangeTo] = useState("");      // empty = the end
   const [bulk, setBulk] = useState(null);          // {done,total} while running
   const [sendPreview, setSendPreview] = useState(null);   // {c, r} — one cell's message
   const [expandedThread, setExpandedThread] = useState(null);  // company id open in Emails
@@ -522,8 +524,6 @@ export default function App({
   const emailable = inFunnelAll.filter(c => recipientsFor(columns, c.data).length > 0);
   const messageCount = emailable.reduce(
     (n, c) => n + recipientsFor(columns, c.data).length, 0);
-  const unsent = inFunnelAll.flatMap(c =>
-    recipientsFor(columns, c.data).filter(r => !sentTo(c, r.email)).map(r => ({ c, r })));
 
   const generateEmails = () => {
     if (!emailable.length && !sendMode) {
@@ -549,15 +549,15 @@ export default function App({
     return res;      // truthy on success, so the preview knows to close
   });
 
-  const runBulk = async () => {
-    /* Row-major over the unsent cells, advance once per company per run. */
+  const runBulk = async (queue) => {
+    /* Row-major over the chosen slice, advance once per company per run. */
     const jobs = [];
     const seen = new Set();
-    for (const { c, r } of unsent) {
+    for (const { c, r } of queue) {
       jobs.push({ c, r, adv: !seen.has(c.id) });
       seen.add(c.id);
     }
-    if (!jobs.length) { flash("Everything is already sent."); return; }
+    if (!jobs.length) { flash("Nothing unsent in that range."); return; }
 
     stopRef.current = false;
     setBulk({ done: 0, total: jobs.length });
@@ -720,6 +720,17 @@ export default function App({
   const pipeRows = sortRows(
     stageFilter === "all" ? filtered : filtered.filter(c => c.stage === stageFilter),
     pipelineCols);
+
+  /* The bulk queue IS the table: same order, same stage filter — so a range
+     of "#1 to #10" means exactly the rows numbered 1–10 on screen. Only
+     funnel rows with an unsent address qualify. */
+  const unsentQueue = pipeRows
+    .filter(c => inFunnelStage(c, stages))
+    .flatMap(c => recipientsFor(columns, c.data)
+      .filter(r => !sentTo(c, r.email)).map(r => ({ c, r })));
+  const rFrom = Math.max(1, Number(rangeFrom) || 1);
+  const rTo = Math.min(unsentQueue.length, Number(rangeTo) || unsentQueue.length);
+  const rangeSlice = rFrom <= rTo ? unsentQueue.slice(rFrom - 1, rTo) : [];
   /* The Emails tab is a list of threads: unread first, then newest activity.
      A row expands to the complete conversation when clicked. */
   const unreadOf = (c) => (c.emails || []).filter(m => m.dir === "in" && !m.read).length;
@@ -970,8 +981,25 @@ export default function App({
                   borderRadius: 12, padding: "10px 14px", margin: "0 0 12px" }}>
                   <Send size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />
                   <span style={{ ...S.cellStrong, whiteSpace: "nowrap" }}>
-                    {unsent.length === 0 ? "Everything sent" : `${unsent.length} unsent`}
+                    {unsentQueue.length === 0 ? "Everything sent" : `${unsentQueue.length} unsent`}
                   </span>
+                  {unsentQueue.length > 1 && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 6,
+                      fontSize: 12.5, color: "var(--mute)", whiteSpace: "nowrap" }}>
+                      send
+                      <input type="number" min={1} max={unsentQueue.length} value={rangeFrom}
+                        disabled={!!bulk} placeholder="1"
+                        style={{ ...S.input, width: 64, padding: "6px 8px" }}
+                        aria-label="First unsent number to send"
+                        onChange={e => setRangeFrom(e.target.value)} />
+                      to
+                      <input type="number" min={1} max={unsentQueue.length} value={rangeTo}
+                        disabled={!!bulk} placeholder={String(unsentQueue.length)}
+                        style={{ ...S.input, width: 64, padding: "6px 8px" }}
+                        aria-label="Last unsent number to send"
+                        onChange={e => setRangeTo(e.target.value)} />
+                    </label>
+                  )}
                   <label style={{ display: "flex", alignItems: "center", gap: 6,
                     fontSize: 12.5, color: "var(--mute)", whiteSpace: "nowrap" }}>
                     time gap
@@ -984,12 +1012,15 @@ export default function App({
                   </label>
                   {!bulk ? (
                     <button className="btn-fill" style={{ ...S.btnFill, padding: "8px 14px" }}
-                      disabled={!credsReady || !scriptReady || unsent.length === 0}
+                      disabled={!credsReady || !scriptReady || rangeSlice.length === 0}
                       title={!credsReady
-                        ? "Add the Gmail app password in Vertical settings → Sending account"
+                        ? "Add the app password in Vertical settings → Sending account"
                         : !scriptReady ? "Save a script in Vertical settings → Email script first" : ""}
-                      onClick={runBulk}>
-                      <Send size={13} /> Send all {unsent.length}
+                      onClick={() => runBulk(rangeSlice)}>
+                      <Send size={13} />
+                      {rangeSlice.length === unsentQueue.length
+                        ? `Send all ${unsentQueue.length}`
+                        : `Send #${rFrom}–#${rTo} (${rangeSlice.length})`}
                     </button>
                   ) : (
                     <>

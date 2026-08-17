@@ -225,6 +225,18 @@ export default function App({
 
   const removeCompany = (c) => removeMany([c.id]);
 
+  /* For leads contacted OUTSIDE the CRM (an earlier campaign, another tool):
+     records their addresses as already-emailed without sending anything, so
+     the cells flip to Sent and bulk skips them forever. Idempotent. */
+  const markEmailedMany = guard(async (ids) => {
+    const { companies: rows, marked } = await api.markEmailed(ids);
+    merge(rows);
+    clearPicked();
+    flash(marked
+      ? `${marked} address${marked === 1 ? "" : "es"} marked as already emailed`
+      : "Nothing to mark — those addresses are already recorded as sent");
+  });
+
   const saveNew = guard(async () => {
     const { companies: rows } = await api.createCompany({ data: row });
     merge(rows);
@@ -754,6 +766,8 @@ export default function App({
         run: () => compose(companies.filter(c => picked.includes(c.id)), true) },
       { label: "Advance without emailing", icon: <ChevronRight size={14} />,
         run: () => advanceMany(picked) },
+      { label: "Mark as already emailed", icon: <Check size={14} />,
+        run: () => markEmailedMany(picked) },
       { label: "Clear", icon: <Trash2 size={14} />, danger: true, run: () => removeMany(picked) },
     ] : [];
 

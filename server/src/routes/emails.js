@@ -192,6 +192,53 @@ emails.post("/preview", requireOrg, requireVertical, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* ----------------------------------------------------------------------
+   Mark as already emailed — record without sending.
+
+   For leads contacted OUTSIDE the CRM (an earlier campaign, another tool):
+   the CRM can only know what it sent itself, so this writes the missing
+   fact. Every unsent address on each lead gets an outbound record with no
+   body, the cells flip to Sent, and bulk sending skips them forever.
+   Idempotent: addresses that already have an outbound record are left
+   alone, so running it twice changes nothing.
+---------------------------------------------------------------------- */
+emails.post("/mark-sent", requireOrg, requireVertical, async (req, res, next) => {
+  try {
+    const want = (Array.isArray(req.body?.ids) ? req.body.ids : [])
+      .map(Number).filter(Number.isInteger);
+    if (!want.length) return res.status(400).json({ error: "Nobody given." });
+
+    const targets = await companiesByIds(want, req.orgId);
+    const mine = targets.filter(c => c.verticalId === req.verticalId);
+    if (!mine.length) return res.status(404).json({ error: "No such companies." });
+
+    let marked = 0;
+    await tx(async (client) => {
+      for (const c of mine) {
+        const already = new Set((c.emails || [])
+          .filter(m => m.dir === "out")
+          .map(m => String(m.to || "").toLowerCase()));
+        const missing = recipientsFor(req.vertical.columns, c.data)
+          .filter(r => !already.has(r.email));
+        for (const r of missing) {
+          await client.query(
+            `INSERT INTO emails (company_id, direction, at, addr, subject, body, read)
+             VALUES ($1,'out',CURRENT_DATE,$2,$3,'',true)`,
+            [c.id, r.email, "Marked as already emailed (outside the CRM)"]);
+          marked++;
+        }
+        if (missing.length)
+          await addHistory(client, c.id, "Marked as already emailed (outside the CRM)");
+      }
+    });
+
+    res.json({
+      companies: await companiesByIds(mine.map(c => c.id), req.orgId),
+      marked,
+    });
+  } catch (e) { next(e); }
+});
+
 /* "Log a reply" — record an inbound message by hand. Same filing path as the
    IMAP poller and the webhook, so it moves the company to Responded in exactly
    the same way. Constrained to the caller's organization: this is a person

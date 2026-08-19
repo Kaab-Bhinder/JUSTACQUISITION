@@ -193,6 +193,26 @@ verticals.patch("/:id", async (req, res, next) => {
       set("smtp_send_as", sendAs);
     }
 
+    /* Follow-up scripts: a short list of {stage, subject, body}, each tied
+       to one of this vertical's stages. Loosely validated — the board joins
+       against live stages when it renders, so a stale stage id means "no
+       follow-up there", never a crash. Bodies are rich-editor HTML under the
+       same cap as the main script. */
+    if (b.followups !== undefined) {
+      if (!Array.isArray(b.followups) || b.followups.length > 5)
+        return res.status(400).json({ error: "Follow-ups must be a short list." });
+      const fus = [];
+      for (const f of b.followups) {
+        const stage = String(f?.stage ?? "").trim().slice(0, 64);
+        const subject = String(f?.subject ?? "").trim().slice(0, 500);
+        const body = String(f?.body ?? "");
+        if (body.length > MAX_SCRIPT)
+          return res.status(400).json({ error: "A follow-up script is too big — likely a pasted image over ~1MB." });
+        if (stage || subject || body.trim()) fus.push({ stage, subject, body });
+      }
+      set("followups", JSON.stringify(fus));
+    }
+
     /* Which of this vertical's stages a replying lead lands in. Loosely
        validated here — the filing query joins against the real stages table,
        so a stale id simply means "no move", never a broken file. */

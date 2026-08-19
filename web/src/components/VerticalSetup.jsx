@@ -179,6 +179,15 @@ export function VerticalSetup({
   const [subject, setSubject] = useState(vertical.subject || "");
   const [body, setBody] = useState(vertical.body || "");
   const editorApi = useRef(null);
+  /* Two follow-up slots, each linked to one of this vertical's stages. Rows
+     sitting in a linked stage get that script from the board's Send buttons
+     — with fresh sent-state, threaded into the first email's conversation. */
+  const blankFu = { stage: "", subject: "", body: "" };
+  const [fus, setFus] = useState(() => [
+    { ...blankFu, ...(vertical.followups?.[0] || {}) },
+    { ...blankFu, ...(vertical.followups?.[1] || {}) },
+  ]);
+  const setFu = (i, patch) => setFus(list => list.map((f, j) => (j === i ? { ...f, ...patch } : f)));
 
   /* ---- sending ---- */
   const [smtpUser, setSmtpUser] = useState(vertical.smtpUser || "");
@@ -260,10 +269,19 @@ export function VerticalSetup({
   };
 
   const saveScript = async () => {
+    for (const [i, f] of fus.entries()) {
+      if ((f.body || "").trim() && !f.stage) {
+        setErr(`Follow-up ${i + 1} has a script but no linked stage — pick which stage it belongs to.`);
+        return false;
+      }
+    }
     setErr("");
     setBusy(true);
-    try { await onSave({ subject, body }); noteSaved(); return true; }
-    catch (e) { setErr(e.message); return false; }
+    try {
+      await onSave({ subject, body, followups: fus });
+      noteSaved();
+      return true;
+    } catch (e) { setErr(e.message); return false; }
     finally { setBusy(false); }
   };
 
@@ -647,6 +665,45 @@ export function VerticalSetup({
                   </button>
                 ))}
               </div>
+
+              {/* ---- follow-ups ------------------------------------------
+                  Each linked to a stage: rows sitting there get THIS script
+                  from the board's Send buttons — fresh sent-state per
+                  follow-up, threaded into the first email's conversation.
+                  Leave the subject empty and it sends as "Re: <the first
+                  subject>", the classic follow-up look. */}
+              {fus.map((f, i) => (
+                <div key={i} style={{ marginTop: 26, paddingTop: 18,
+                  borderTop: "1px solid var(--line)" }}>
+                  <div style={S.sectionTitle}>Follow-up {i + 1}</div>
+                  <Field label="Sent to leads sitting in stage">
+                    <select style={S.input} value={f.stage}
+                      onChange={e => setFu(i, { stage: e.target.value })}>
+                      <option value="">— not linked — this follow-up is off</option>
+                      {pipe.map(st => (
+                        <option key={st.id} value={st.id}
+                          disabled={fus.some((o, j) => j !== i && o.stage === st.id)}>
+                          {st.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={S.auHint}>
+                      Move a lead into this stage (or let bulk advance it) and its
+                      Send buttons switch to this script automatically.
+                    </div>
+                  </Field>
+                  <Field label="Subject (empty = replies as “Re: the first email” — same thread)">
+                    <input style={S.input} value={f.subject}
+                      placeholder="Re: (threads under the first email)"
+                      onChange={e => setFu(i, { subject: e.target.value })} />
+                  </Field>
+                  <Field label="Body">
+                    <RichText value={f.body} onChange={v => setFu(i, { body: v })}
+                      minHeight={160}
+                      placeholder={"Hi {first_name},\n\nFloating this back to the top of your inbox…"} />
+                  </Field>
+                </div>
+              ))}
             </>
           )}
 

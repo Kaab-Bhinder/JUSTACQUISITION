@@ -13,13 +13,15 @@ import { BodyView } from "./Composer.jsx";
    button below the text, never from the cell directly — the human reads
    what goes out, every time.
 ---------------------------------------------------------------------- */
-export function SendPreview({ c, r, vertical, org, credsReady, onSend, onCancel }) {
+export function SendPreview({ c, r, vertical, org, script, credsReady, onSend, onCancel }) {
   const [busy, setBusy] = useState(false);
 
+  /* `script` is stage-resolved by the board: the follow-up linked to this
+     row's stage, or the first touch. What previews is what sends. */
   const ctx = { columns: vertical.columns, data: c.data, vertical, org, recipient: r };
-  const subject = fillMerge(vertical.subject || "", ctx);
-  const body = fillMerge(vertical.body || "", ctx);
-  const scriptReady = !!subject.trim() && !!body.trim();
+  const subject = fillMerge(script?.subject ?? vertical.subject ?? "", ctx);
+  const body = fillMerge(script?.body ?? vertical.body ?? "", ctx);
+  const scriptReady = !!body.trim() && (!!subject.trim() || script?.kind !== "script");
 
   const send = async () => {
     if (busy) return;
@@ -36,7 +38,7 @@ export function SendPreview({ c, r, vertical, org, credsReady, onSend, onCancel 
         aria-label={`Email to ${r.email}`}>
         <div style={S.modalHead}>
           <button style={S.closeBtn} onClick={onCancel} aria-label="Close"><X size={18} /></button>
-          <div style={S.modalStep}>{r.colLabel} — {c.name}</div>
+          <div style={S.modalStep}>{script?.label ? `${script.label} · ` : ""}{r.colLabel} — {c.name}</div>
           <h2 style={S.modalTitle}>{r.name ? `To ${r.name}` : `To ${r.email}`}</h2>
           <p style={S.modalSub}>
             The exact message this address gets. Sending records it on the thread
@@ -65,7 +67,7 @@ export function SendPreview({ c, r, vertical, org, credsReady, onSend, onCancel 
           )}
 
           <div style={S.previewBox}>
-            <div style={S.previewSubject}>{subject || "(no subject)"}</div>
+            <div style={S.previewSubject}>{subject || "Re: (threads under the first email's subject)"}</div>
             <BodyView body={body} />
           </div>
         </div>

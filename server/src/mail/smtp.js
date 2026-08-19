@@ -110,7 +110,7 @@ export async function verify(vertical) {
    data: images but render CID parts fine. The plain-text part rides along:
    multipart mail with a text alternative reads better to spam filters than
    HTML alone. */
-export async function send(vertical, { to, subject, text, html }) {
+export async function send(vertical, { to, subject, text, html, inReplyTo, references }) {
   const t = transporterFor(vertical);
   if (!t) throw new Error("This vertical has no sending account. Add one in its settings.");
 
@@ -123,6 +123,11 @@ export async function send(vertical, { to, subject, text, html }) {
     return await t.sendMail({
       from, to, subject, text,
       ...(html ? { html, attachDataUrls: true } : {}),
+      /* A follow-up that references the first touch lands in the SAME
+         conversation in the recipient's mailbox — that's these two headers,
+         nothing more. */
+      ...(inReplyTo ? { inReplyTo } : {}),
+      ...(references ? { references } : {}),
     });
   } catch (e) {
     throw new Error(friendly(e, vertical));

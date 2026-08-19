@@ -68,6 +68,7 @@ const COMPANY_SELECT = `
                     'subject', e.subject,
                     'body', e.body,
                     'read', e.read,
+                    'kind', e.kind,
                     'messageId', e.message_id,
                     -- the UI reads .to on outbound and .from on inbound
                     'to', CASE WHEN e.direction = 'out' THEN e.addr END,
@@ -126,6 +127,7 @@ const VERTICAL_LIST = `
          v.smtp_send_as AS "smtpSendAs",
          v.smtp_host AS "smtpHost", v.smtp_port AS "smtpPort",
          v.replied_stage AS "repliedStage",
+         v.followups,
          (v.smtp_secret <> '') AS "smtpConfigured",
          v.setup_done AS "setupDone",
          v.position, v.created_at AS "createdAt",

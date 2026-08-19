@@ -58,6 +58,12 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
        column they sit in, so "send Email 2 for this row" sends exactly that
        one address. Absent, every filled email column sends. */
     const colKey = String(req.body?.colKey || "").trim();
+    /* Which script this send is — '' / 'script' = first touch, 'fu1'/'fu2' =
+       follow-ups. Recorded on every message: it is what makes sent-state
+       per-script, so a follow-up can go to an address the first touch
+       already reached, but never twice itself. */
+    const kind = /^[a-z0-9_-]{0,16}$/.test(String(req.body?.kind ?? ""))
+      ? String(req.body?.kind ?? "") : "";
 
     if (!want.length) return res.status(400).json({ error: "Nobody to send to." });
     if (!subject || !body.trim())
@@ -93,11 +99,27 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
         const ctx = { columns: v.columns, data: c.data, vertical: v, org, recipient: r };
         const filled = fillMerge(body, ctx);
         const isHtml = looksHtml(filled);
+
+        /* Threading: a follow-up references the earlier touches to the SAME
+           address, so the recipient's mailbox stacks it into one
+           conversation. References carries the chain, In-Reply-To the last
+           link. A blank follow-up subject becomes "Re: <the first one>". */
+        const chain = (c.emails || []).filter(m =>
+          m.dir === "out" && m.messageId &&
+          String(m.to || "").toLowerCase() === r.email);
+        const prev = chain[chain.length - 1] || null;
+        let subj = fillMerge(subject, ctx).trim();
+        if (!subj && prev) subj = /^re:/i.test(prev.subject) ? prev.subject : `Re: ${prev.subject}`;
+
         const draft = {
           to: r.email,
-          subject: fillMerge(subject, ctx),
+          subject: subj,
           text: isHtml ? htmlToText(filled) : filled,
           ...(isHtml ? { html: filled } : {}),
+          ...(prev ? {
+            inReplyTo: prev.messageId,
+            references: chain.map(m => m.messageId).join(" "),
+          } : {}),
         };
         try {
           const info = await smtpSend(v, draft);
@@ -130,10 +152,11 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
         /* The body recorded is the body sent — HTML when the script was
            HTML — so the thread shows the styled message, images included. */
         await client.query(
-          `INSERT INTO emails (company_id, direction, at, addr, subject, body, read, message_id)
-           VALUES ($1,'out',CURRENT_DATE,$2,$3,$4,true,$5)
+          `INSERT INTO emails (company_id, direction, at, addr, subject, body, read, message_id, kind, thread_id)
+           VALUES ($1,'out',CURRENT_DATE,$2,$3,$4,true,$5,$6,$7)
            ON CONFLICT (message_id) DO NOTHING`,
-          [d.company.id, d.to, d.subject, d.body, d.messageId]);
+          [d.company.id, d.to, d.subject, d.body, d.messageId, kind,
+           d.references ? d.references.split(" ")[0] : d.messageId]);
 
         const i = order.indexOf(d.company.stage);
         if (advance && i > -1 && i < order.length - 1 && !advanced.has(d.company.id)) {
@@ -222,8 +245,8 @@ emails.post("/mark-sent", requireOrg, requireVertical, async (req, res, next) =>
           .filter(r => !already.has(r.email));
         for (const r of missing) {
           await client.query(
-            `INSERT INTO emails (company_id, direction, at, addr, subject, body, read)
-             VALUES ($1,'out',CURRENT_DATE,$2,$3,'',true)`,
+            `INSERT INTO emails (company_id, direction, at, addr, subject, body, read, kind)
+             VALUES ($1,'out',CURRENT_DATE,$2,$3,'',true,'script')`,
             [c.id, r.email, "Marked as already emailed (outside the CRM)"]);
           marked++;
         }

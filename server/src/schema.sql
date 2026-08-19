@@ -178,6 +178,12 @@ CREATE TABLE IF NOT EXISTS verticals (
   -- reply can never drag a Meeting back to Responded. Empty = replies file
   -- on the thread and flag unread, but never move a stage.
   replied_stage TEXT  NOT NULL DEFAULT '',
+  -- Follow-up scripts, each linked to one of this vertical's stages:
+  -- [{stage, subject, body}]. A lead sitting in a linked stage gets that
+  -- script from the board's Send buttons instead of the first-touch script,
+  -- with its own per-address sent state (emails.kind). JSONB for the same
+  -- reason columns is: read whole, written whole, ordered.
+  followups   JSONB   NOT NULL DEFAULT '[]',
   -- False until the first-run wizard finishes. Opening an unfinished vertical
   -- resumes the wizard instead of showing an empty board whose columns nobody
   -- has described yet.
@@ -193,6 +199,7 @@ ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_send_as TEXT NOT NULL DEFAUL
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_host TEXT NOT NULL DEFAULT '';
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS smtp_port INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE verticals ADD COLUMN IF NOT EXISTS replied_stage TEXT NOT NULL DEFAULT '';
+ALTER TABLE verticals ADD COLUMN IF NOT EXISTS followups JSONB NOT NULL DEFAULT '[]';
 
 -- Seed the reply-landing stage where a pipeline plainly has one: a stage
 -- whose id or label says "responded"/"replied". Verticals without one keep
@@ -595,8 +602,14 @@ CREATE TABLE IF NOT EXISTS emails (
   subject    TEXT NOT NULL DEFAULT '',
   body       TEXT NOT NULL DEFAULT '',
   read       BOOLEAN NOT NULL DEFAULT false,
+  -- Which script an outbound message was: '' or 'script' = the first touch
+  -- (and rows recorded before this column existed), 'fu1'/'fu2' = follow-ups.
+  -- This is what lets one address be mailed once PER SCRIPT and never twice
+  -- with the same one.
+  kind       TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE emails ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS emails_company_idx ON emails (company_id, at, id);
 CREATE INDEX IF NOT EXISTS emails_thread_idx  ON emails (thread_id) WHERE thread_id IS NOT NULL;
 

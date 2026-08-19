@@ -158,8 +158,8 @@ export const saveStages = (stages, remap) => req("PUT", "/stages", { stages, rem
    The API sends now, from the vertical's own account, after the composer's
    preview step. Preview resolves merge tags on the server so what is shown is
    what will be sent, by the same code. */
-export const sendEmails = ({ ids, subject, body, advance: adv, colKey }) =>
-  post("/emails/send", { ids, subject, body, advance: adv, colKey }, inVertical);
+export const sendEmails = ({ ids, subject, body, advance: adv, colKey, kind }) =>
+  post("/emails/send", { ids, subject, body, advance: adv, colKey, kind }, inVertical);
 export const previewEmails = ({ ids, subject, body }) =>
   post("/emails/preview", { ids, subject, body }, inVertical);
 export const markEmailed = (ids) => post("/emails/mark-sent", { ids }, inVertical);

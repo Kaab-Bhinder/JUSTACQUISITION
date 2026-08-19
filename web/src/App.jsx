@@ -529,8 +529,33 @@ export default function App({
   const scriptReady = !!(vertical.subject || "").trim() && !!(vertical.body || "").trim();
   const credsReady = !!vertical.smtpUser && vertical.smtpConfigured !== false;
 
-  const sentTo = (c, email) => (c.emails || []).some(m =>
-    m.dir === "out" && (m.to || "").toLowerCase() === String(email).toLowerCase());
+  /* Sent-state is PER SCRIPT: the first touch and each follow-up track their
+     own outbound record per address, so a follow-up can reach an address the
+     first touch already did — but never repeat itself. Rows recorded before
+     kinds existed (kind '') count as the first touch. */
+  const sentKind = (c, email, kind) => (c.emails || []).some(m =>
+    m.dir === "out" &&
+    (m.to || "").toLowerCase() === String(email).toLowerCase() &&
+    (kind === "script"
+      ? !m.kind || m.kind === "script"
+      : m.kind === kind));
+
+  /* Which script a row gets: the follow-up linked to its current stage, or
+     the first-touch script. The board's Send buttons, the bulk queue and the
+     previews all resolve through here — one rule, no divergence. */
+  const scriptFor = (c) => {
+    const fus = vertical.followups || [];
+    const i = fus.findIndex(f => f.stage && f.stage === c.stage);
+    if (i >= 0) {
+      const f = fus[i];
+      return { kind: `fu${i + 1}`, label: `Follow-up ${i + 1}`,
+               subject: f.subject || "", body: f.body || "",
+               ready: !!(f.body || "").trim() };
+    }
+    return { kind: "script", label: "First touch",
+             subject: vertical.subject || "", body: vertical.body || "",
+             ready: !!(vertical.subject || "").trim() && !!(vertical.body || "").trim() };
+  };
 
   const inFunnelAll = companies.filter(c => inFunnelStage(c, stages));
   const emailable = inFunnelAll.filter(c => recipientsFor(columns, c.data).length > 0);
@@ -547,9 +572,10 @@ export default function App({
   };
 
   const sendSingle = async (c, colKey, adv) => {
+    const script = scriptFor(c);
     const res = await api.sendEmails({
-      ids: [c.id], subject: vertical.subject, body: vertical.body,
-      advance: adv, colKey,
+      ids: [c.id], subject: script.subject, body: script.body,
+      advance: adv, colKey, kind: script.kind,
     });
     merge(res.companies);
     return res;
@@ -641,16 +667,24 @@ export default function App({
     key: `send:${col.key}`, label: `Send · ${col.label}`, w: 130,
     sortValue: c => {
       const email = String(c.data?.[col.key] ?? "").trim();
-      return !email ? 2 : sentTo(c, email) ? 1 : 0;      // unsent first
+      return !email ? 2 : sentKind(c, email, scriptFor(c).kind) ? 1 : 0;   // unsent first
     },
     render: c => {
       const email = String(c.data?.[col.key] ?? "").trim().toLowerCase();
       if (!email) return <span style={S.cellSub}>—</span>;
-      if (sentTo(c, email))
+      const script = scriptFor(c);
+      if (sentKind(c, email, script.kind))
         return <span style={{ ...S.duePill, background: "var(--good-soft)", color: "var(--good)" }}
-          title={`Already sent to ${email}`}>
+          title={`${script.label} already sent to ${email}`}>
           <Check size={11} /> Sent
         </span>;
+      if (!script.ready)
+        return (
+          <button className="row-btn" style={{ ...S.rowBtn, opacity: 0.55 }} disabled
+            title={`Write the ${script.label} script in Vertical settings → Email script first`}>
+            <Send size={11} /> {script.kind === "script" ? "Send" : script.label}
+          </button>
+        );
       /* The button opens this address's complete generated message — read it,
          then send from inside. Enabled without the script or the credential
          so the text (or what's missing) is always one click away; only the
@@ -658,13 +692,13 @@ export default function App({
       return (
         <button className="row-btn" style={S.rowBtn}
           disabled={!!bulk}
-          title={`Read the generated email for ${email}, then send it`}
+          title={`Read the generated ${script.label} email for ${email}, then send it`}
           onClick={stop(() => setSendPreview({
             c,
             r: recipientsFor(columns, c.data).find(x => x.colKey === col.key)
                || { colKey: col.key, colLabel: col.label, email, name: "" },
           }))}>
-          <Send size={11} /> Send
+          <Send size={11} /> {script.kind === "script" ? "Send" : script.label}
         </button>
       );
     },
@@ -738,8 +772,13 @@ export default function App({
      funnel rows with an unsent address qualify. */
   const unsentQueue = pipeRows
     .filter(c => inFunnelStage(c, stages))
-    .flatMap(c => recipientsFor(columns, c.data)
-      .filter(r => !sentTo(c, r.email)).map(r => ({ c, r })));
+    .flatMap(c => {
+      const script = scriptFor(c);
+      if (!script.ready) return [];
+      return recipientsFor(columns, c.data)
+        .filter(r => !sentKind(c, r.email, script.kind))
+        .map(r => ({ c, r }));
+    });
   const rFrom = Math.max(1, Number(rangeFrom) || 1);
   const rTo = Math.min(unsentQueue.length, Number(rangeTo) || unsentQueue.length);
   const rangeSlice = rFrom <= rTo ? unsentQueue.slice(rFrom - 1, rTo) : [];
@@ -1191,12 +1230,15 @@ export default function App({
       {/* One cell's complete email, with the send inside it. The company is
           re-read from state so a preview left open over a background refresh
           still shows current data. */}
-      {sendPreview && <SendPreview
-        c={companies.find(x => x.id === sendPreview.c.id) || sendPreview.c}
-        r={sendPreview.r}
-        vertical={vertical} org={org} credsReady={credsReady}
-        onSend={sendCell}
-        onCancel={() => setSendPreview(null)} />}
+      {sendPreview && (() => {
+        const live = companies.find(x => x.id === sendPreview.c.id) || sendPreview.c;
+        return <SendPreview
+          c={live}
+          r={sendPreview.r}
+          vertical={vertical} org={org} script={scriptFor(live)} credsReady={credsReady}
+          onSend={sendCell}
+          onCancel={() => setSendPreview(null)} />;
+      })()}
 
       {showBulk && <BulkBar n={picked.length} actions={bulkActions} onClear={clearPicked} />}
 

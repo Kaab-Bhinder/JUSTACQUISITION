@@ -779,6 +779,14 @@ export default function App({
         .filter(r => !sentKind(c, r.email, script.kind))
         .map(r => ({ c, r }));
     });
+  /* What the queue is made of, by script — the proof that rows in a linked
+     stage generate their follow-up, not the first touch. */
+  const kindBreakdown = {};
+  for (const { c } of unsentQueue) {
+    const l = scriptFor(c).label;
+    kindBreakdown[l] = (kindBreakdown[l] || 0) + 1;
+  }
+
   const rFrom = Math.max(1, Number(rangeFrom) || 1);
   const rTo = Math.min(unsentQueue.length, Number(rangeTo) || unsentQueue.length);
   const rangeSlice = rFrom <= rTo ? unsentQueue.slice(rFrom - 1, rTo) : [];
@@ -1036,6 +1044,11 @@ export default function App({
                   <span style={{ ...S.cellStrong, whiteSpace: "nowrap" }}>
                     {unsentQueue.length === 0 ? "Everything sent" : `${unsentQueue.length} unsent`}
                   </span>
+                  {unsentQueue.length > 0 && Object.keys(kindBreakdown).length > 1 && (
+                    <span style={{ ...S.cellSub, whiteSpace: "nowrap" }}>
+                      {Object.entries(kindBreakdown).map(([l, n]) => `${n} ${l}`).join(" · ")}
+                    </span>
+                  )}
                   {unsentQueue.length > 1 && (
                     <label style={{ display: "flex", alignItems: "center", gap: 6,
                       fontSize: 12.5, color: "var(--mute)", whiteSpace: "nowrap" }}>

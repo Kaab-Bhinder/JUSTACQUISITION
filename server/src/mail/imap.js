@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
-import { parseMessage } from "./parse.js";
+import { simpleParser } from "mailparser";
+import { parseMessage, stripHtml } from "./parse.js";
 
 /* ----------------------------------------------------------------------
    IMAP — reading replies out of your mailbox
@@ -190,6 +191,7 @@ export async function findSentToMany(account, { from, tos, mailbox = "[Gmail]/Al
           const mid = m.envelope?.messageId;
           if (!mid) continue;
           arr.push({
+            uid: m.uid,
             messageId: mid,
             /* The envelope names what this mail itself replied to — it is
                how the adopter tells two mails of one conversation from two
@@ -198,6 +200,19 @@ export async function findSentToMany(account, { from, tos, mailbox = "[Gmail]/Al
             subject: m.envelope.subject || "(no subject)",
             at: m.envelope.date || null,
           });
+        }
+        /* The text too, not just the headers: a follow-up quotes the mail it
+           replies to, and for adopted history the mailbox is the only place
+           that text exists. A body that won't parse costs the quote, never
+           the adoption. */
+        for (const h of arr) {
+          try {
+            const full = await client.fetchOne(String(h.uid), { source: true }, { uid: true });
+            const parsed = full?.source ? await simpleParser(full.source) : null;
+            const text = (parsed?.text || stripHtml(parsed?.html) || "").trim();
+            h.text = text.slice(0, 15000);
+          } catch { h.text = ""; }
+          delete h.uid;
         }
         out[to] = arr;
       } catch {

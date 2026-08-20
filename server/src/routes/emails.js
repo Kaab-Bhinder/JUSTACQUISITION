@@ -146,11 +146,38 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
           subj = first ? (/^re:/i.test(first) ? first : `Re: ${first}`) : "Following up";
         }
 
+        /* A reply doesn't just point at the earlier mail — it carries it,
+           quoted below the new text, the way every mail client writes one.
+           Headers thread the conversation only in a mailbox that still
+           holds the original; the quote is the context that survives the
+           recipient deleting or junking it. Quoting the LATEST message
+           nests naturally: its recorded body already quotes its own
+           predecessor. */
+        let finalText = isHtml ? htmlToText(filled) : filled;
+        let finalHtml = isHtml ? filled : null;
+        if (isFu && prev && String(prev.body || "").trim()) {
+          const esc = (s) => String(s).replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          const prevIsHtml = looksHtml(prev.body);
+          const prevText = prevIsHtml ? htmlToText(prev.body) : prev.body;
+          const day = new Date(String(prev.at || "").slice(0, 10));
+          const attr = `On ${isNaN(day) ? String(prev.at || "").slice(0, 10) : day.toDateString()}, ` +
+            `${v.smtpFrom || org.senderName || ""} <${fromAddressFor(v)}> wrote:`.trimStart();
+          finalText += `\n\n${attr}\n` +
+            prevText.split("\n").map(l => `> ${l}`).join("\n");
+          const newHtml = isHtml ? filled : esc(filled).replace(/\n/g, "<br>");
+          const prevHtml = prevIsHtml ? prev.body : esc(prevText).replace(/\n/g, "<br>");
+          finalHtml = `${newHtml}<br><br><div class="gmail_quote">` +
+            `<div class="gmail_attr">${esc(attr)}<br></div>` +
+            `<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;` +
+            `border-left:1px #ccc solid;padding-left:1ex">${prevHtml}</blockquote></div>`;
+        }
+
         const draft = {
           to: r.email,
           subject: subj,
-          text: isHtml ? htmlToText(filled) : filled,
-          ...(isHtml ? { html: filled } : {}),
+          text: finalText,
+          ...(finalHtml ? { html: finalHtml } : {}),
           ...(prev ? {
             inReplyTo: prev.messageId,
             references: threadIds.join(" "),
@@ -160,7 +187,7 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
         };
         try {
           const info = await smtpSend(v, draft);
-          sent.push({ company: c, ...draft, body: filled, messageId: info?.messageId || null });
+          sent.push({ company: c, ...draft, body: finalHtml || finalText, messageId: info?.messageId || null });
         } catch (e) {
           failed.push({ id: c.id, name: c.name, to: r.email, why: e.message });
           /* An auth failure will fail every remaining message the same way;
@@ -324,9 +351,9 @@ emails.post("/adopt-history", requireOrg, requireVertical, async (req, res, next
           const { rowCount } = await client.query(
             `INSERT INTO emails (company_id, direction, at, addr, subject, body,
                                  read, message_id, kind, thread_id)
-             VALUES ($1,'out', COALESCE($2::date, CURRENT_DATE), $3, $4, '', true, $5, 'script', $6)
+             VALUES ($1,'out', COALESCE($2::date, CURRENT_DATE), $3, $4, $5, true, $6, 'script', $7)
              ON CONFLICT (message_id) DO NOTHING`,
-            [c.id, at, email, h.subject, h.messageId, root]);
+            [c.id, at, email, h.subject, h.text || "", h.messageId, root]);
           if (rowCount) { adopted++; touched.add(c.id); }
         }
       }

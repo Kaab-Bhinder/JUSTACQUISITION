@@ -66,8 +66,13 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
       ? String(req.body?.kind ?? "") : "";
 
     if (!want.length) return res.status(400).json({ error: "Nobody to send to." });
-    if (!subject || !body.trim())
-      return res.status(400).json({ error: "A subject and a message are both required." });
+    if (!body.trim())
+      return res.status(400).json({ error: "A message is required." });
+    /* Follow-ups may ship subjectless on purpose - the per-recipient logic
+       below fills "Re: <the earlier email's subject>" so they thread. Only
+       the first touch, which has nothing to Re:, must bring its own. */
+    if (!subject && (!kind || kind === "script"))
+      return res.status(400).json({ error: "A subject is required for the first-touch script." });
 
     /* The auth-bearing read: includes the sealed credential smtp.js opens. */
     const v = await verticalAuth(req.verticalId, req.orgId);

@@ -78,7 +78,7 @@ export const describeImapError = (e) => {
 
 /* Connect, do one thing, always disconnect. Every IMAP call goes through here
    so a thrown error can't leave a socket open against the mail server. */
-async function withMailbox(account, fn) {
+async function withMailbox(account, fn, mailbox) {
   if (!account?.user || !account?.pass) throw new Error("IMAP is not configured.");
   const client = new ImapFlow(settings(account));
   /* ImapFlow also emits socket failures as 'error' EVENTS — a timeout after
@@ -93,7 +93,7 @@ async function withMailbox(account, fn) {
   try {
     /* readOnly opens the mailbox with EXAMINE rather than SELECT, so merely
        looking at a message can never mark it as read in your own inbox. */
-    lock = await client.getMailboxLock(MAILBOX(), { readOnly: true });
+    lock = await client.getMailboxLock(mailbox || MAILBOX(), { readOnly: true });
     return await fn(client);
   } finally {
     try { lock?.release(); } catch { /* already gone */ }
@@ -162,4 +162,44 @@ export async function fetchNewReplies({ account, addresses, known, lookbackDays,
 
     return { messages, scanned: uids.length, matched: candidates.length };
   });
+}
+
+/* ----------------------------------------------------------------------
+   Adopting sent history
+
+   Mail sent BEFORE the CRM existed — manually, from a previous provider —
+   often lives in the mailbox anyway (migrated, forwarded, or simply always
+   there), complete with its Message-IDs. This finds it: one session over
+   All Mail, one search per recipient address, envelopes only. The caller
+   files the hits as outbound records, and from then on follow-ups thread
+   into those original conversations for real.
+
+   "[Gmail]/All Mail" is Gmail/Workspace-specific on purpose: that is where
+   migrated mail lands regardless of label. Read-only like everything here.
+---------------------------------------------------------------------- */
+export async function findSentToMany(account, { from, tos, mailbox = "[Gmail]/All Mail", maxPer = 3 }) {
+  return withMailbox(account, async (client) => {
+    const out = {};
+    for (const to of tos) {
+      try {
+        const uids = await client.search({ from, to }, { uid: true });
+        if (!uids?.length) { out[to] = []; continue; }
+        const take = uids.slice(-maxPer);      // the newest few are the story
+        const arr = [];
+        for await (const m of client.fetch(take, { envelope: true }, { uid: true })) {
+          const mid = m.envelope?.messageId;
+          if (!mid) continue;
+          arr.push({
+            messageId: mid,
+            subject: m.envelope.subject || "(no subject)",
+            at: m.envelope.date || null,
+          });
+        }
+        out[to] = arr;
+      } catch {
+        out[to] = [];                          // one bad search must not kill the run
+      }
+    }
+    return out;
+  }, mailbox);
 }

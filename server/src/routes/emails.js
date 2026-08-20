@@ -3,7 +3,9 @@ import { query, tx, companiesByIds, verticalAuth, addHistory } from "../db.js";
 import { fillMerge, recipientsFor } from "../columns.js";
 import { fileInbound } from "../inbound.js";
 import { requireOrg, requireVertical } from "../auth.js";
-import { send as smtpSend } from "../mail/smtp.js";
+import { send as smtpSend, fromAddressFor } from "../mail/smtp.js";
+import { findSentToMany } from "../mail/imap.js";
+import { open as openSecret } from "../crypto.js";
 
 export const emails = Router();
 
@@ -225,6 +227,86 @@ emails.post("/preview", requireOrg, requireVertical, async (req, res, next) => {
           subject: fillMerge(subject, { columns: v.columns, data: c.data, vertical: v, org, recipient: r }),
           body: fillMerge(body, { columns: v.columns, data: c.data, vertical: v, org, recipient: r }),
         }))),
+    });
+  } catch (e) { next(e); }
+});
+
+/* ----------------------------------------------------------------------
+   Adopt sent history — learn what the mailbox already knows.
+
+   For leads first contacted OUTSIDE the CRM: the original mails usually sit
+   in the mailbox (migrated or native) with their Message-IDs intact. This
+   searches All Mail for outbound mail to each selected lead's addresses and
+   files the hits as real outbound records — real ids included — so
+   follow-ups thread into those ORIGINAL conversations, and Contacted /
+   sent-state reflect mailbox truth instead of guesswork. Idempotent:
+   message_id is unique, re-running adopts nothing twice. Callers send small
+   batches of ids; each request is one IMAP session.
+---------------------------------------------------------------------- */
+emails.post("/adopt-history", requireOrg, requireVertical, async (req, res, next) => {
+  try {
+    const want = (Array.isArray(req.body?.ids) ? req.body.ids : [])
+      .map(Number).filter(Number.isInteger).slice(0, 30);
+    if (!want.length) return res.status(400).json({ error: "Nobody given." });
+
+    const v = await verticalAuth(req.verticalId, req.orgId);
+    const pass = v?.smtpSecret ? openSecret(v.smtpSecret) : null;
+    if (!v?.smtpUser || !pass)
+      return res.status(409).json({ error: "This vertical has no sending account — the mailbox to scan is its account. Add it in settings first." });
+
+    const custom = v.smtpHost && !/gmail\.com$/i.test(v.smtpHost);
+    if (custom)
+      return res.status(409).json({ error: "History adoption reads Gmail/Workspace mailboxes (All Mail). This vertical sends through a custom host." });
+
+    const targets = (await companiesByIds(want, req.orgId))
+      .filter(c => c.verticalId === req.verticalId);
+    if (!targets.length) return res.status(404).json({ error: "No such companies." });
+
+    /* Only addresses that don't already have a real-id outbound: a CRM-sent
+       or previously adopted mail already threads; searching again buys
+       nothing. Mark-as-emailed rows (no id) DO get searched — adoption
+       upgrades the guess to the real thing. */
+    const jobs = [];
+    for (const c of targets) {
+      for (const r of recipientsFor(req.vertical.columns, c.data)) {
+        const hasReal = (c.emails || []).some(m =>
+          m.dir === "out" && m.messageId &&
+          String(m.to || "").toLowerCase() === r.email);
+        if (!hasReal) jobs.push({ c, email: r.email });
+      }
+    }
+    if (!jobs.length)
+      return res.json({ companies: targets, adopted: 0, checked: 0 });
+
+    const account = { user: v.smtpUser, pass };
+    const found = await findSentToMany(account, {
+      from: fromAddressFor(v),
+      tos: [...new Set(jobs.map(j => j.email))],
+    });
+
+    let adopted = 0;
+    const touched = new Set();
+    await tx(async (client) => {
+      for (const { c, email } of jobs) {
+        for (const h of found[email] || []) {
+          const at = h.at ? new Date(h.at).toISOString().slice(0, 10) : null;
+          const { rowCount } = await client.query(
+            `INSERT INTO emails (company_id, direction, at, addr, subject, body,
+                                 read, message_id, kind, thread_id)
+             VALUES ($1,'out', COALESCE($2::date, CURRENT_DATE), $3, $4, '', true, $5, 'script', $5)
+             ON CONFLICT (message_id) DO NOTHING`,
+            [c.id, at, email, h.subject, h.messageId]);
+          if (rowCount) { adopted++; touched.add(c.id); }
+        }
+      }
+      for (const id of touched)
+        await addHistory(client, id, "Adopted earlier emails from the mailbox");
+    });
+
+    res.json({
+      companies: await companiesByIds(targets.map(c => c.id), req.orgId),
+      adopted,
+      checked: jobs.length,
     });
   } catch (e) { next(e); }
 });

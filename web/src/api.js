@@ -163,6 +163,8 @@ export const sendEmails = ({ ids, subject, body, advance: adv, colKey, kind }) =
 export const previewEmails = ({ ids, subject, body }) =>
   post("/emails/preview", { ids, subject, body }, inVertical);
 export const markEmailed = (ids) => post("/emails/mark-sent", { ids }, inVertical);
+export const adoptHistory = (ids) =>
+  post("/emails/adopt-history", { ids }, { ...inVertical, timeoutMs: 180000 });
 export const logReply = ({ id, subject, body }) =>
   post("/emails/log", { id, subject, body });
 

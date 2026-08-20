@@ -228,6 +228,32 @@ export default function App({
   /* For leads contacted OUTSIDE the CRM (an earlier campaign, another tool):
      records their addresses as already-emailed without sending anything, so
      the cells flip to Sent and bulk skips them forever. Idempotent. */
+  /* Scan the sending account's mailbox for mail already sent to the
+     selected leads (before the CRM, from anywhere) and file it with its
+     REAL Message-IDs — follow-ups then thread into those original
+     conversations. Chunked: each request is one IMAP session over a small
+     batch. */
+  const adoptHistoryMany = async (ids) => {
+    const CHUNK = 15;
+    let adopted = 0, checked = 0;
+    try {
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        flash(`Scanning mailbox… ${Math.min(i + CHUNK, ids.length)}/${ids.length} leads`);
+        const r = await api.adoptHistory(ids.slice(i, i + CHUNK));
+        merge(r.companies);
+        adopted += r.adopted; checked += r.checked;
+      }
+      clearPicked();
+      flash(adopted
+        ? `Adopted ${adopted} earlier email${adopted === 1 ? "" : "s"} from the mailbox — follow-ups will thread into them`
+        : checked
+          ? "No earlier mail found in the mailbox for those addresses"
+          : "Nothing to scan — those addresses already have threaded mail on record");
+    } catch (e) {
+      flash(e.message);
+    }
+  };
+
   const markEmailedMany = guard(async (ids) => {
     const { companies: rows, marked } = await api.markEmailed(ids);
     merge(rows);
@@ -867,6 +893,8 @@ export default function App({
         run: () => advanceMany(picked) },
       { label: "Mark as already emailed", icon: <Check size={14} />,
         run: () => markEmailedMany(picked) },
+      { label: "Adopt mailbox history", icon: <Inbox size={14} />,
+        run: () => adoptHistoryMany(picked) },
       { label: "Clear", icon: <Trash2 size={14} />, danger: true, run: () => removeMany(picked) },
     ] : [];
 

@@ -738,12 +738,53 @@ export default function App({
     },
   };
 
+  /* Always-on contact status, read straight off the thread: which of the
+     row's addresses have ANY outbound on record (CRM-sent, follow-up, or
+     marked as externally emailed), and whether anyone wrote back. The
+     definitive "have we already contacted this one?" answer, visible with
+     send mode off. */
+  const colContacted = {
+    key: "contacted", label: "Contacted", w: 150,
+    sortValue: c => {
+      const rs = recipientsFor(columns, c.data);
+      if ((c.emails || []).some(m => m.dir === "in")) return 3;
+      if (!rs.length) return -1;
+      const outTo = new Set((c.emails || []).filter(m => m.dir === "out")
+        .map(m => String(m.to || "").toLowerCase()));
+      return rs.filter(r => outTo.has(r.email)).length / rs.length;
+    },
+    render: c => {
+      const rs = recipientsFor(columns, c.data);
+      const outs = (c.emails || []).filter(m => m.dir === "out");
+      const outTo = new Set(outs.map(m => String(m.to || "").toLowerCase()));
+      const done = rs.filter(r => outTo.has(r.email));
+      const replied = (c.emails || []).some(m => m.dir === "in");
+      if (replied)
+        return <span style={{ ...S.duePill, background: "var(--good-soft)",
+          color: "var(--good)" }} title="They wrote back — the thread has their reply">
+          <Reply size={11} /> Replied
+        </span>;
+      if (!rs.length) return <span style={S.cellSub}>no email</span>;
+      if (!done.length)
+        return <span style={S.cellSub} title="No outbound on record for any of this row's addresses">
+          not contacted
+        </span>;
+      const last = outs[outs.length - 1];
+      return (
+        <span style={{ ...S.duePill, background: "var(--accent-soft)", color: "var(--accent)" }}
+          title={`Emailed: ${done.map(r => r.email).join(", ")}`}>
+          <Check size={11} /> {done.length}/{rs.length} emailed{last ? ` · ${fmtDate(last.at)}` : ""}
+        </span>
+      );
+    },
+  };
+
   const pipelineCols = [
     /* Update-stage right beside the name: on a wide sheet the data columns
        scroll away, and the one control every row needs must not scroll with
        them. It is also the only hand-control for stages — one dropdown, no
        competing buttons. */
-    colCompany, colStageSelect,
+    colCompany, colStageSelect, colContacted,
     ...allDataCols,
     ...sendCols,
     /* Just Edit and delete. Sending lives in the Send cells (send mode) and

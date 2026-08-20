@@ -110,6 +110,15 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
         const prev = chain[chain.length - 1] || null;
         let subj = fillMerge(subject, ctx).trim();
         if (!subj && prev) subj = /^re:/i.test(prev.subject) ? prev.subject : `Re: ${prev.subject}`;
+        /* No prior CRM send to hang a "Re:" on — the first touch happened
+           outside the CRM (marked, not sent). Fall back to Re: the
+           first-touch script's subject: it reads as the follow-up it is, and
+           if the manual mail used the same subject line, Gmail may even
+           thread them by subject. Never an empty subject. */
+        if (!subj) {
+          const first = fillMerge(v.subject || "", ctx).trim();
+          subj = first ? (/^re:/i.test(first) ? first : `Re: ${first}`) : "Following up";
+        }
 
         const draft = {
           to: r.email,

@@ -69,6 +69,7 @@ const COMPANY_SELECT = `
                     'body', e.body,
                     'read', e.read,
                     'kind', e.kind,
+                    'threadId', e.thread_id,
                     'messageId', e.message_id,
                     -- the UI reads .to on outbound and .from on inbound
                     'to', CASE WHEN e.direction = 'out' THEN e.addr END,

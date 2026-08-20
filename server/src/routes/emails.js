@@ -107,22 +107,41 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
         const filled = fillMerge(body, ctx);
         const isHtml = looksHtml(filled);
 
-        /* Threading: a follow-up references the earlier touches to the SAME
-           address, so the recipient's mailbox stacks it into one
-           conversation. References carries the chain, In-Reply-To the last
-           link. A blank follow-up subject becomes "Re: <the first one>". */
-        const chain = (c.emails || []).filter(m =>
-          m.dir === "out" && m.messageId &&
-          String(m.to || "").toLowerCase() === r.email);
-        const prev = chain[chain.length - 1] || null;
+        /* Threading is follow-up logic, deliberately separate from a plain
+           send. A first touch or composer message references nothing and
+           carries its own subject — it opens a conversation, it never joins
+           one.
+
+           A follow-up joins the LATEST conversation to this address, and
+           only that one. An address can carry several old threads (previous
+           campaigns, adopted mailbox history), and a References header that
+           mixes their ids would ask the mailbox to weld distinct
+           conversations together. So: In-Reply-To names the newest message
+           to the address, References lists only the ids that share that
+           message's thread. */
+        const isFu = /^fu\d+$/.test(kind);
+        let prev = null, threadIds = [];
+        if (isFu) {
+          const outs = (c.emails || []).filter(m =>
+            m.dir === "out" && m.messageId &&
+            String(m.to || "").toLowerCase() === r.email);
+          prev = outs[outs.length - 1] || null;
+          if (prev) {
+            const root = prev.threadId || prev.messageId;
+            threadIds = outs
+              .filter(m => (m.threadId || m.messageId) === root)
+              .map(m => m.messageId);
+          }
+        }
         let subj = fillMerge(subject, ctx).trim();
-        if (!subj && prev) subj = /^re:/i.test(prev.subject) ? prev.subject : `Re: ${prev.subject}`;
-        /* No prior CRM send to hang a "Re:" on — the first touch happened
-           outside the CRM (marked, not sent). Fall back to Re: the
-           first-touch script's subject: it reads as the follow-up it is, and
-           if the manual mail used the same subject line, Gmail may even
-           thread them by subject. Never an empty subject. */
-        if (!subj) {
+        if (isFu && !subj && prev)
+          subj = /^re:/i.test(prev.subject) ? prev.subject : `Re: ${prev.subject}`;
+        /* A follow-up with no thread at all still goes out — it becomes the
+           first contact, and the record below says so. Its subject falls
+           back to Re: the first-touch script's subject: it reads as the
+           follow-up it is, and if the manual mail used the same subject
+           line, Gmail may even thread them by subject. Never empty. */
+        if (isFu && !subj) {
           const first = fillMerge(v.subject || "", ctx).trim();
           subj = first ? (/^re:/i.test(first) ? first : `Re: ${first}`) : "Following up";
         }
@@ -134,8 +153,10 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
           ...(isHtml ? { html: filled } : {}),
           ...(prev ? {
             inReplyTo: prev.messageId,
-            references: chain.map(m => m.messageId).join(" "),
+            references: threadIds.join(" "),
           } : {}),
+          threadRoot: prev ? (prev.threadId || prev.messageId) : null,
+          firstContactFu: isFu && !prev,
         };
         try {
           const info = await smtpSend(v, draft);
@@ -172,7 +193,7 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
            VALUES ($1,'out',CURRENT_DATE,$2,$3,$4,true,$5,$6,$7)
            ON CONFLICT (message_id) DO NOTHING`,
           [d.company.id, d.to, d.subject, d.body, d.messageId, kind,
-           d.references ? d.references.split(" ")[0] : d.messageId]);
+           d.threadRoot || d.messageId]);
 
         const i = order.indexOf(d.company.stage);
         if (advance && i > -1 && i < order.length - 1 && !advanced.has(d.company.id)) {
@@ -183,7 +204,9 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
           await addHistory(client, d.company.id,
             `Emailed ${d.to} — moved to ${stages[i + 1].label}`);
         } else {
-          await addHistory(client, d.company.id, `Emailed ${d.to}: ${d.subject.slice(0, 40)}`);
+          await addHistory(client, d.company.id, d.firstContactFu
+            ? `Follow-up went to ${d.to} as a FIRST contact — no earlier thread existed`
+            : `Emailed ${d.to}: ${d.subject.slice(0, 40)}`);
         }
       }
     });
@@ -288,14 +311,22 @@ emails.post("/adopt-history", requireOrg, requireVertical, async (req, res, next
     const touched = new Set();
     await tx(async (client) => {
       for (const { c, email } of jobs) {
+        /* Hits arrive oldest-first. When one hit replied to another we
+           adopted, they were one conversation — file them under one thread
+           root. Otherwise each mail roots its own thread, and the send path
+           will pick the newest: a follow-up joins the latest conversation,
+           never a welded-together mix of old campaigns. */
+        const roots = new Map();
         for (const h of found[email] || []) {
+          const root = roots.get(h.inReplyTo) || h.messageId;
+          roots.set(h.messageId, root);
           const at = h.at ? new Date(h.at).toISOString().slice(0, 10) : null;
           const { rowCount } = await client.query(
             `INSERT INTO emails (company_id, direction, at, addr, subject, body,
                                  read, message_id, kind, thread_id)
-             VALUES ($1,'out', COALESCE($2::date, CURRENT_DATE), $3, $4, '', true, $5, 'script', $5)
+             VALUES ($1,'out', COALESCE($2::date, CURRENT_DATE), $3, $4, '', true, $5, 'script', $6)
              ON CONFLICT (message_id) DO NOTHING`,
-            [c.id, at, email, h.subject, h.messageId]);
+            [c.id, at, email, h.subject, h.messageId, root]);
           if (rowCount) { adopted++; touched.add(c.id); }
         }
       }

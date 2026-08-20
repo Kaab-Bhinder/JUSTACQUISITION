@@ -191,6 +191,10 @@ export async function findSentToMany(account, { from, tos, mailbox = "[Gmail]/Al
           if (!mid) continue;
           arr.push({
             messageId: mid,
+            /* The envelope names what this mail itself replied to — it is
+               how the adopter tells two mails of one conversation from two
+               separate campaigns to the same address. */
+            inReplyTo: m.envelope.inReplyTo || null,
             subject: m.envelope.subject || "(no subject)",
             at: m.envelope.date || null,
           });

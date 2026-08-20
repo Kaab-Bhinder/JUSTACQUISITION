@@ -133,14 +133,20 @@ export const emailColumns = (columns) =>
    generated message. */
 export function recipientsFor(columns, data) {
   const out = [];
+  const seen = new Set();
   for (const col of emailColumns(columns)) {
-    /* Extracted, not trusted: cells imported before validation existed can
-       carry two stacked addresses or "Name <addr>" — the first address-shaped
-       token is the recipient, and a cell with none is no recipient at all. */
-    const m = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.exec(String((data || {})[col.key] ?? ""));
-    if (!m) continue;
+    /* Extracted, not trusted — and ALL of them: a cell routinely carries two
+       stacked addresses ("Name <a@x.co> b@y.co"), and each address-shaped
+       token is its own recipient, greeted by the column's linked name. The
+       same address appearing twice on a row counts once. */
+    const cell = String((data || {})[col.key] ?? "");
     const name = col.linkTo ? String((data || {})[col.linkTo] ?? "").trim() : "";
-    out.push({ email: m[0].toLowerCase(), name, colKey: col.key, colLabel: col.label });
+    for (const m of cell.matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi)) {
+      const email = m[0].toLowerCase();
+      if (seen.has(email)) continue;
+      seen.add(email);
+      out.push({ email, name, colKey: col.key, colLabel: col.label });
+    }
   }
   return out;
 }

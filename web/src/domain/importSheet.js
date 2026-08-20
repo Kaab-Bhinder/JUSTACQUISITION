@@ -152,8 +152,11 @@ export const cleanCell = (raw, type) => {
   let s = String(raw ?? "").replace(/\s+/g, " ").trim();
   if (!s || JUNK.has(s.toLowerCase())) return "";
   if (type === "email") {
-    const m = EMAIL_RX.exec(s);
-    return m ? m[0].toLowerCase() : "";
+    /* Keep every address the cell carries — cells routinely stack two — in
+       one canonical comma-joined form. */
+    const all = [...new Set([...s.matchAll(new RegExp(EMAIL_RX.source, "gi"))]
+      .map(m => m[0].toLowerCase()))];
+    return all.join(", ");
   }
   if (type === "url") {
     const w = cleanWeb(s);

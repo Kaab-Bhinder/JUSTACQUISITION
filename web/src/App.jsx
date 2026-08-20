@@ -664,42 +664,53 @@ export default function App({
      state of exactly one address of one row — button, Sent tag, or a dash
      when that column is empty on this row. */
   const sendCols = !sendMode ? [] : emailColumns(columns).map(col => ({
-    key: `send:${col.key}`, label: `Send · ${col.label}`, w: 130,
+    key: `send:${col.key}`, label: `Send · ${col.label}`, w: 150,
     sortValue: c => {
-      const email = String(c.data?.[col.key] ?? "").trim();
-      return !email ? 2 : sentKind(c, email, scriptFor(c).kind) ? 1 : 0;   // unsent first
+      const rs = recipientsFor(columns, c.data).filter(r => r.colKey === col.key);
+      if (!rs.length) return 2;
+      const script = scriptFor(c);
+      return rs.some(r => !sentKind(c, r.email, script.kind)) ? 0 : 1;   // unsent first
     },
     render: c => {
-      const email = String(c.data?.[col.key] ?? "").trim().toLowerCase();
-      if (!email) return <span style={S.cellSub}>—</span>;
+      /* One control PER ADDRESS the cell carries — cells routinely stack
+         two, and each address has its own sent-state per script. */
+      const rs = recipientsFor(columns, c.data).filter(r => r.colKey === col.key);
+      if (!rs.length) return <span style={S.cellSub}>—</span>;
       const script = scriptFor(c);
-      if (sentKind(c, email, script.kind))
-        return <span style={{ ...S.duePill, background: "var(--good-soft)", color: "var(--good)" }}
-          title={`${script.label} already sent to ${email}`}>
-          <Check size={11} /> Sent
-        </span>;
-      if (!script.ready)
-        return (
-          <button className="row-btn" style={{ ...S.rowBtn, opacity: 0.55 }} disabled
-            title={`Write the ${script.label} script in Vertical settings → Email script first`}>
-            <Send size={11} /> {script.kind === "script" ? "Send" : script.label}
-          </button>
-        );
-      /* The button opens this address's complete generated message — read it,
-         then send from inside. Enabled without the script or the credential
-         so the text (or what's missing) is always one click away; only the
-         Send inside the preview is gated. */
+      const many = rs.length > 1;
       return (
-        <button className="row-btn" style={S.rowBtn}
-          disabled={!!bulk}
-          title={`Read the generated ${script.label} email for ${email}, then send it`}
-          onClick={stop(() => setSendPreview({
-            c,
-            r: recipientsFor(columns, c.data).find(x => x.colKey === col.key)
-               || { colKey: col.key, colLabel: col.label, email, name: "" },
-          }))}>
-          <Send size={11} /> {script.kind === "script" ? "Send" : script.label}
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4,
+          alignItems: "flex-start" }}>
+          {rs.map(r => {
+            const shortAddr = r.email.split("@")[0].slice(0, 14);
+            if (sentKind(c, r.email, script.kind))
+              return (
+                <span key={r.email} style={{ ...S.duePill, background: "var(--good-soft)",
+                  color: "var(--good)" }}
+                  title={`${script.label} already sent to ${r.email}`}>
+                  <Check size={11} /> Sent{many ? ` · ${shortAddr}` : ""}
+                </span>
+              );
+            if (!script.ready)
+              return (
+                <button key={r.email} className="row-btn"
+                  style={{ ...S.rowBtn, opacity: 0.55 }} disabled
+                  title={`Write the ${script.label} script in Vertical settings → Email script first`}>
+                  <Send size={11} /> {script.kind === "script" ? "Send" : script.label}
+                </button>
+              );
+            return (
+              <button key={r.email} className="row-btn" style={S.rowBtn}
+                disabled={!!bulk}
+                title={`Read the generated ${script.label} email for ${r.email}, then send it`}
+                onClick={stop(() => setSendPreview({ c, r }))}>
+                <Send size={11} />
+                {many ? shortAddr
+                  : script.kind === "script" ? "Send" : script.label}
+              </button>
+            );
+          })}
+        </div>
       );
     },
   }));

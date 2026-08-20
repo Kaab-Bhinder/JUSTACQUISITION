@@ -106,13 +106,18 @@ export const emailColumns = (columns) =>
    carrying the name its column is linked to. One entry = one message. */
 export function recipientsFor(columns, data) {
   const out = [];
+  const seen = new Set();
   for (const col of emailColumns(columns)) {
-    /* Extracted, not trusted — mirrors the server: first address-shaped token
-       wins, a cell with none is no recipient. */
-    const m = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.exec(String((data || {})[col.key] ?? ""));
-    if (!m) continue;
+    /* Mirrors the server exactly: EVERY address-shaped token in a cell is a
+       recipient (cells routinely stack two), deduped across the row. */
+    const cell = String((data || {})[col.key] ?? "");
     const name = col.linkTo ? String((data || {})[col.linkTo] ?? "").trim() : "";
-    out.push({ email: m[0].toLowerCase(), name, colKey: col.key, colLabel: col.label });
+    for (const m of cell.matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi)) {
+      const email = m[0].toLowerCase();
+      if (seen.has(email)) continue;
+      seen.add(email);
+      out.push({ email, name, colKey: col.key, colLabel: col.label });
+    }
   }
   return out;
 }

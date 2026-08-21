@@ -1,6 +1,9 @@
-# Render blueprint — one free web service running the API, which also serves
-# the built frontend. The database lives on Neon (free), not on Render: Render's
-# free Postgres expires after 30 days, Neon's doesn't.
+# Render blueprint — one web service running the API. The database lives on
+# Neon, not on Render: Render's free Postgres expires after 30 days, Neon's
+# doesn't. The frontend lives on Vercel and calls this API cross-origin.
+#
+# Starter, not free, on purpose: Render's free tier blocks outbound SMTP
+# ports, so a free service can log in but never send a single email.
 #
 # In the Render dashboard: New + -> Blueprint -> point it at this repo, then
 # fill in the env vars marked sync:false. Full steps: deploy/RENDER.md
@@ -8,7 +11,7 @@ services:
   - type: web
     name: bsbw-crm
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm run install:all && npm run build
     # migrate is idempotent — safe on every boot, and it keeps the schema
     # current with the code that just deployed.
@@ -29,4 +32,6 @@ services:
       - key: APP_USER            # the login the browser asks for — the front door
         sync: false
       - key: APP_PASSWORD
+        sync: false
+      - key: WEB_ORIGIN          # comma list: https://justacquisition.com,https://www.justacquisition.com,https://<app>.vercel.app
         sync: false

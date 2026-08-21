@@ -149,6 +149,9 @@ export const advance = (ids) => post("/companies/advance", { ids }, inVertical);
 export const moveToStage = (id, stage) => post(`/companies/${id}/move`, { stage }, inVertical);
 export const stamp = (ids, to) => post("/companies/stamp", { ids, to }, inVertical);
 export const markRead = (id) => post(`/companies/${id}/read`, undefined, inVertical);
+/* The conversation with bodies — fetched when a thread is opened. Board
+   rows carry message metadata only, which keeps every fetch light. */
+export const companyEmails = (id) => get(`/companies/${id}/emails`, inVertical);
 export const removeCompanies = (ids) => post("/companies/delete", { ids }, inVertical);
 
 /* ---- stages ---- */

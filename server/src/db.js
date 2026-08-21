@@ -61,12 +61,15 @@ const COMPANY_SELECT = `
            FROM contacts k WHERE k.company_id = c.id
          ), '[]'::json) AS contacts,
          COALESCE((
+           -- Every message's metadata, never its body: bodies carry whole
+           -- signatures as inline images and rode along on every board
+           -- fetch, which is how a free database's transfer quota got eaten.
+           -- The thread view loads bodies on open: GET /companies/:id/emails.
            SELECT json_agg(json_build_object(
                     'id', e.id::text,
                     'dir', e.direction,
                     'at', e.at,
                     'subject', e.subject,
-                    'body', e.body,
                     'read', e.read,
                     'kind', e.kind,
                     'threadId', e.thread_id,

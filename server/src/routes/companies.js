@@ -357,6 +357,26 @@ companies.post("/stamp", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* The conversation with bodies, for the thread view — loaded when a thread
+   is opened, not with the board. Same scope rule as everything else. */
+companies.get("/:id/emails", async (req, res, next) => {
+  try {
+    const id = intId(req.params.id);
+    if (id === null) return badId(res);
+    const { rows } = await query(
+      `SELECT e.id::text, e.direction AS dir, e.at, e.subject, e.body, e.read,
+              e.kind, e.thread_id AS "threadId", e.message_id AS "messageId",
+              CASE WHEN e.direction = 'out' THEN e.addr END AS "to",
+              CASE WHEN e.direction = 'in'  THEN e.addr END AS "from"
+         FROM emails e
+         JOIN companies c ON c.id = e.company_id
+        WHERE e.company_id = $1 AND c.org_id = $2 AND c.vertical_id = $3
+        ORDER BY e.at, e.id`,
+      [id, req.orgId, req.verticalId]);
+    res.json({ emails: rows });
+  } catch (e) { next(e); }
+});
+
 /* Opening a company clears its unread replies. */
 companies.post("/:id/read", async (req, res, next) => {
   try {

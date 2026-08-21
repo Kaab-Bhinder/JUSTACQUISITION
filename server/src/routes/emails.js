@@ -155,18 +155,23 @@ emails.post("/send", requireOrg, requireVertical, async (req, res, next) => {
            predecessor. */
         let finalText = isHtml ? htmlToText(filled) : filled;
         let finalHtml = isHtml ? filled : null;
-        if (isFu && prev && String(prev.body || "").trim()) {
+        /* Bodies don't travel with company rows any more; the one being
+           quoted is read here, by id, only when there is one to quote. */
+        const prevBody = prev
+          ? (await query(`SELECT body FROM emails WHERE id = $1`, [prev.id])).rows[0]?.body || ""
+          : "";
+        if (isFu && prev && prevBody.trim()) {
           const esc = (s) => String(s).replace(/&/g, "&amp;")
             .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-          const prevIsHtml = looksHtml(prev.body);
-          const prevText = prevIsHtml ? htmlToText(prev.body) : prev.body;
+          const prevIsHtml = looksHtml(prevBody);
+          const prevText = prevIsHtml ? htmlToText(prevBody) : prevBody;
           const day = new Date(String(prev.at || "").slice(0, 10));
           const attr = `On ${isNaN(day) ? String(prev.at || "").slice(0, 10) : day.toDateString()}, ` +
             `${v.smtpFrom || org.senderName || ""} <${fromAddressFor(v)}> wrote:`.trimStart();
           finalText += `\n\n${attr}\n` +
             prevText.split("\n").map(l => `> ${l}`).join("\n");
           const newHtml = isHtml ? filled : esc(filled).replace(/\n/g, "<br>");
-          const prevHtml = prevIsHtml ? prev.body : esc(prevText).replace(/\n/g, "<br>");
+          const prevHtml = prevIsHtml ? prevBody : esc(prevText).replace(/\n/g, "<br>");
           finalHtml = `${newHtml}<br><br><div class="gmail_quote">` +
             `<div class="gmail_attr">${esc(attr)}<br></div>` +
             `<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;` +

@@ -174,7 +174,7 @@ function AddDialog({ taken, busy, onCreate, onCancel }) {
 }
 
 export function VerticalPicker({
-  org, verticals, theme, onToggleTheme, onOpen, onCreate, onLeave, onDelete, onSaveOrg,
+  org, verticals, theme, onToggleTheme, onOpen, onCreate, onLeave, onDelete, onDeleteOrg, onSaveOrg,
 }) {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -277,6 +277,7 @@ export function VerticalPicker({
             await onSaveOrg(payload, admin);
             setEditingOrg(false);
           }}
+          onDelete={onDeleteOrg}
           onCancel={() => setEditingOrg(false)} />
       )}
 

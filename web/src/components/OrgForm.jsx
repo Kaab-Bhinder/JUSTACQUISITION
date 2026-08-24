@@ -339,9 +339,9 @@ export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
             </>
         </div>
 
-        <div style={S.modalFoot}>
+        <div style={{ ...S.modalFoot, flexWrap: "wrap" }}>
           {editing && onDelete && (
-            <button type="button" className="d-remove" style={S.dRemove}
+            <button type="button" className="d-remove" style={{ ...S.dRemove, flexShrink: 0 }}
               onClick={() => setDeleting(true)}>
               <Trash2 size={14} /> Delete this organization…
             </button>

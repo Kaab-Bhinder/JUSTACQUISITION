@@ -194,6 +194,12 @@ export default function Root() {
     return org;
   };
 
+  const deleteOrg = async ({ confirm, adminEmail, adminPassword }) => {
+    const { orgs: list } = await api.deleteOrg(orgId, confirm, { adminEmail, adminPassword });
+    setOrgs(list);
+    leaveOrg();
+  };
+
   const createVertical = async (payload) => {
     const { vertical, verticals: vs } = await api.createVertical(payload);
     setVerticals(vs);
@@ -239,6 +245,7 @@ export default function Root() {
         onOpen={openVertical} onCreate={createVertical}
         onLeave={leaveOrg}
         onDelete={deleteVerticalCard}
+        onDeleteOrg={deleteOrg}
         onSaveOrg={async (patch, admin) => {
           const { orgs: list } = await api.updateOrg(orgId, { ...patch, ...admin });
           setOrgs(list);

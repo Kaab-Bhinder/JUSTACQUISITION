@@ -207,6 +207,13 @@ export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
               ? "Branding, verticals and the signature shown on the composer. Its id and its pipeline stay as they are."
               : "It starts empty — verticals, their pipelines and their leads are all added inside."}
           </p>
+          {editing && onDelete && (
+            <button type="button" className="d-remove"
+              style={{ ...S.dRemove, alignSelf: "flex-start", marginTop: 12 }}
+              onClick={() => setDeleting(true)}>
+              <Trash2 size={14} /> Delete this organization…
+            </button>
+          )}
         </div>
 
         <div style={S.modalBody}>
@@ -304,15 +311,6 @@ export function OrgForm({ org, taken = [], onSave, onCancel, onDelete, busy }) {
               account, its app password, the From name — belongs to each
               vertical and lives in its settings. An organization is branding
               and a container, nothing that touches mail. */}
-
-          {editing && onDelete && (
-            <div style={{ marginTop: 26, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
-              <button type="button" className="d-remove" style={S.dRemove}
-                onClick={() => setDeleting(true)}>
-                <Trash2 size={14} /> Delete this organization…
-              </button>
-            </div>
-          )}
 
           {/* ---- the gate ----
               Last, because it is the price of the form rather than part of the

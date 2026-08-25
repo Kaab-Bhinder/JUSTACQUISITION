@@ -46,8 +46,8 @@ export function AddForm({
           </h2>
           <p style={{ ...S.sub, margin: "4px 0 0" }}>
             {editing
-              ? "Change anything — the board, the emails and the merge tags all read from here."
-              : `They'll start in ${firstStageLabel || "the first stage"}.`}
+              ? "Change anything — saves happen automatically, and the board, the emails and the merge tags all read from here."
+              : `Changes save automatically after you pause. They'll start in ${firstStageLabel || "the first stage"}.`}
           </p>
         </div>
         <div style={S.drawerBody}>

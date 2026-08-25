@@ -21,11 +21,25 @@ const ids = (body) => (Array.isArray(body?.ids) ? body.ids : [])
    500, when it's really a malformed request. */
 const intId = (raw) => { const n = Number(raw); return Number.isInteger(n) ? n : null; };
 const badId = (res) => res.status(400).json({ error: "That isn't a company id." });
+const normalizeName = (value) => String(value ?? "").trim().toLowerCase();
 
 const stageOrder = async (verticalId, client = { query }) =>
   (await client.query(
     `SELECT id, label FROM stages WHERE vertical_id = $1 ORDER BY position, id`,
     [verticalId])).rows;
+
+const duplicateCompany = async (client, orgId, verticalId, name, ignoreId = null) => {
+  const run = typeof client?.query === "function" ? client.query.bind(client) : client;
+  const params = [orgId, verticalId, normalizeName(name)];
+  const extra = ignoreId ? ` AND id <> $4` : "";
+  if (ignoreId) params.push(ignoreId);
+  const { rows } = await run(
+    `SELECT id FROM companies
+      WHERE org_id = $1 AND vertical_id = $2 AND lower(btrim(name)) = $3${extra}
+      LIMIT 1`,
+    params);
+  return rows[0] || null;
+};
 
 /* Every mutation answers with the rows it touched rather than a bare 200, so
    the client merges server truth into its state instead of re-fetching the
@@ -42,6 +56,8 @@ async function insertCompany(client, orgId, vertical, c) {
   const data = cleanData(vertical.columns, c.data);
   const p = project(vertical.columns, data);
   if (!p.name) return null;
+  const dup = await duplicateCompany(client, orgId, vertical.id, p.name);
+  if (dup) return { duplicate: true, name: p.name };
 
   /* companies.linkedin is the COMPANY page chip under the row's name. It is
      deliberately NOT filled from the sheet's LinkedIn columns: those are the
@@ -89,6 +105,8 @@ companies.post("/", async (req, res, next) => {
     }));
     if (id === null)
       return res.status(400).json({ error: "The name column can't be empty." });
+    if (id?.duplicate)
+      return res.status(409).json({ error: `"${id.name}" already exists in this vertical.` });
     res.status(201).json({ companies: await companiesByIds([id], req.orgId) });
   } catch (e) { next(e); }
 });
@@ -242,6 +260,8 @@ companies.patch("/:id", async (req, res, next) => {
     const data = cleanData(req.vertical.columns, { ...own.data, ...(b.data || {}) });
     const p = project(req.vertical.columns, data);
     if (!p.name) return res.status(400).json({ error: "The name column can't be empty." });
+     const dup = await duplicateCompany(query, req.orgId, req.verticalId, p.name, id);
+     if (dup) return res.status(409).json({ error: `"${p.name}" already exists in this vertical.` });
 
     await tx(async (client) => {
       const sets = [`data = $1`, `name = $2`, `website = $3`, `notes = $4`, `updated_at = now()`];

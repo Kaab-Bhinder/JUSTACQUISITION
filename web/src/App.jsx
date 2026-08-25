@@ -75,10 +75,13 @@ export default function App({
   const [composer, setComposer] = useState(null);   // { mode, targets, advance }
   const [dragId, setDragId] = useState(null);
   const [dropOn, setDropOn] = useState(null);
+  const [autosavePulse, setAutosavePulse] = useState(0);
   const [mail, setMail] = useState({
     configured: false, busy: false, user: null,
     lastSync: null, lastFiled: 0, error: "", pollSeconds: 90,
   });
+
+  const autosaveRef = useRef({ timer: null, inFlight: false, pending: false, savedKey: "", warnedDuplicate: "" });
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
@@ -98,6 +101,68 @@ export default function App({
   const guard = (fn) => async (...args) => {
     try { return await fn(...args); }
     catch (e) { flash(e.message); return null; }
+  };
+
+  const openNewLead = () => {
+    autosaveRef.current.savedKey = "";
+    autosaveRef.current.warnedDuplicate = "";
+    setEditing(null);
+    setRow(emptyRow(columns));
+    setShowForm(true);
+  };
+
+  const openEdit = (c) => {
+    const nextRow = { ...emptyRow(columns), ...(c.data || {}) };
+    autosaveRef.current.savedKey = JSON.stringify({ id: c.id, row: nextRow });
+    autosaveRef.current.warnedDuplicate = "";
+    setSelected(null);
+    setRow(nextRow);
+    setEditing({ id: c.id, name: c.name });
+    setShowForm(true);
+  };
+
+  const persistLead = async ({ close = false, autosave = false } = {}) => {
+    const nameCol = byRole(columns, "name");
+    const name = nameCol ? String(row[nameCol.key] ?? "").trim() : "";
+    if (!name) throw new Error("The name column can't be empty.");
+
+    const wanted = name.toLowerCase();
+    const duplicate = companies.find(c =>
+      c.id !== editing?.id && String(c.name ?? "").trim().toLowerCase() === wanted);
+    if (duplicate) {
+      const key = `${editing?.id || "new"}:${wanted}`;
+      const message = `"${name}" already exists in this vertical.`;
+      if (autosave) {
+        if (autosaveRef.current.warnedDuplicate !== key) {
+          autosaveRef.current.warnedDuplicate = key;
+          flash(message);
+        }
+        return null;
+      }
+      throw new Error(message);
+    }
+
+    autosaveRef.current.warnedDuplicate = "";
+
+    const result = editing
+      ? await api.updateCompany(editing.id, { data: row })
+      : await api.createCompany({ data: row });
+    merge(result.companies);
+
+    const saved = result.companies[0];
+    autosaveRef.current.savedKey = JSON.stringify({ id: saved.id, row });
+
+    if (close) {
+      setShowForm(false);
+      setEditing(null);
+      setRow(emptyRow(columns));
+      autosaveRef.current.savedKey = "";
+      autosaveRef.current.warnedDuplicate = "";
+    } else if (!editing) {
+      setEditing({ id: saved.id, name: saved.name });
+    }
+
+    return saved;
   };
 
   /* One request brings back the board, its stages, the vertical itself and
@@ -264,30 +329,55 @@ export default function App({
   });
 
   const saveNew = guard(async () => {
-    const { companies: rows } = await api.createCompany({ data: row });
-    merge(rows);
-    setShowForm(false); setRow(emptyRow(columns));
-    flash(`${rows[0].name} added to ${labelOf(rows[0].stage, stages)}`);
+    const saved = await persistLead({ close: true });
+    if (saved) flash(`${saved.name} added to ${labelOf(saved.stage, stages)}`);
   });
-
-  /* Editing reuses the add form, pre-filled from the row's data. The PATCH
-     merges on the server and recomputes the projections, so the name, the
-     contacts and every merge tag follow the edit immediately. */
-  const openEdit = (c) => {
-    setSelected(null);
-    setRow({ ...emptyRow(columns), ...(c.data || {}) });
-    setEditing({ id: c.id, name: c.name });
-    setShowForm(true);
-  };
 
   const saveEdit = guard(async () => {
-    const { companies: rows } = await api.updateCompany(editing.id, { data: row });
-    merge(rows);
-    setShowForm(false); setEditing(null); setRow(emptyRow(columns));
-    flash(`${rows[0].name} updated`);
+    const saved = await persistLead({ close: true });
+    if (saved) flash(`${saved.name} updated`);
   });
 
-  const closeForm = () => { setShowForm(false); setEditing(null); setRow(emptyRow(columns)); };
+  const closeForm = () => {
+    autosaveRef.current.timer && clearTimeout(autosaveRef.current.timer);
+    autosaveRef.current = { timer: null, inFlight: false, pending: false, savedKey: "", warnedDuplicate: "" };
+    setShowForm(false);
+    setEditing(null);
+    setRow(emptyRow(columns));
+  };
+
+  const currentName = (() => {
+    const col = byRole(columns, "name");
+    return col ? String(row[col.key] ?? "").trim() : "";
+  })();
+
+  useEffect(() => {
+    if (!showForm || !currentName) return;
+    const key = JSON.stringify({ id: editing?.id || null, row });
+    if (autosaveRef.current.savedKey === key) return;
+    clearTimeout(autosaveRef.current.timer);
+    autosaveRef.current.timer = setTimeout(async () => {
+      autosaveRef.current.timer = null;
+      if (autosaveRef.current.inFlight) {
+        autosaveRef.current.pending = true;
+        return;
+      }
+      autosaveRef.current.inFlight = true;
+      try {
+        const saved = await persistLead({ autosave: true });
+        if (saved) setAutosavePulse(p => p + 1);
+      } catch (e) {
+        flash(e.message);
+      } finally {
+        autosaveRef.current.inFlight = false;
+        if (autosaveRef.current.pending) {
+          autosaveRef.current.pending = false;
+          setAutosavePulse(p => p + 1);
+        }
+      }
+    }, 700);
+    return () => clearTimeout(autosaveRef.current.timer);
+  }, [showForm, currentName, editing?.id, row, autosavePulse]);
 
   /* The stage dropdown on each row — the same route the board drag uses,
      reachable from one control. Only the vertical's own stages exist. */
@@ -1013,7 +1103,7 @@ export default function App({
           {sendMode ? "Hide send columns" : `Generate emails${messageCount > 0 ? ` · ${messageCount}` : ""}`}
         </button>
         <button style={S.importBtn}
-          onClick={() => { setEditing(null); setRow(emptyRow(columns)); setShowForm(true); }}>
+          onClick={openNewLead}>
           <Plus size={16} /> Add lead
         </button>
         <button style={S.importBtn} onClick={() => setImportOpen(true)}>
@@ -1042,7 +1132,7 @@ export default function App({
             {/* Always in reach, whatever the sidebar is doing. */}
             {view === "pipeline" && (
               <button className="btn-fill" style={{ ...S.btnFill, padding: "9px 14px" }}
-                onClick={() => { setEditing(null); setRow(emptyRow(columns)); setShowForm(true); }}>
+                onClick={openNewLead}>
                 <Plus size={14} /> Add lead
               </button>
             )}

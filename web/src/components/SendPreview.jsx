@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Send, X } from "lucide-react";
 import { S } from "../theme.js";
 import { fillMerge, sendAddress } from "../domain/columns.js";
-import { BodyView } from "./Composer.jsx";
+import { RichText } from "./RichText.jsx";
 
 /* ----------------------------------------------------------------------
    Send preview — one cell's message, in full
@@ -15,18 +15,25 @@ import { BodyView } from "./Composer.jsx";
 ---------------------------------------------------------------------- */
 export function SendPreview({ c, r, vertical, org, script, credsReady, onSend, onCancel }) {
   const [busy, setBusy] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
 
   /* `script` is stage-resolved by the board: the follow-up linked to this
      row's stage, or the first touch. What previews is what sends. */
   const ctx = { columns: vertical.columns, data: c.data, vertical, org, recipient: r };
-  const subject = fillMerge(script?.subject ?? vertical.subject ?? "", ctx);
-  const body = fillMerge(script?.body ?? vertical.body ?? "", ctx);
+  const previewSubject = fillMerge(script?.subject ?? vertical.subject ?? "", ctx);
+  const previewBody = fillMerge(script?.body ?? vertical.body ?? "", ctx);
   const scriptReady = !!body.trim() && (!!subject.trim() || script?.kind !== "script");
+
+  useEffect(() => {
+    setSubject(previewSubject);
+    setBody(previewBody);
+  }, [previewSubject, previewBody]);
 
   const send = async () => {
     if (busy) return;
     setBusy(true);
-    const ok = await onSend(c, r);       // guard()ed upstream: null on failure
+    const ok = await onSend(c, r, subject, body);       // guard()ed upstream: null on failure
     setBusy(false);
     if (ok !== null && ok !== undefined) onCancel();
   };
@@ -67,8 +74,12 @@ export function SendPreview({ c, r, vertical, org, script, credsReady, onSend, o
           )}
 
           <div style={S.previewBox}>
-            <div style={S.previewSubject}>{subject || "Re: (threads under the first email's subject)"}</div>
-            <BodyView body={body} />
+            <input style={{ ...S.input, marginBottom: 10, fontWeight: 600 }}
+              value={subject} onChange={e => setSubject(e.target.value)}
+              placeholder="Subject line" />
+            <RichText value={body} onChange={setBody}
+              placeholder="Write the message this recipient will get"
+              minHeight={180} />
           </div>
         </div>
 

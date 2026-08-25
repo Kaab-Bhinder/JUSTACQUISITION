@@ -687,18 +687,18 @@ export default function App({
     if (!sendMode) { setView("pipeline"); setLayout("list"); }
   };
 
-  const sendSingle = async (c, colKey, adv) => {
+  const sendSingle = async (c, colKey, adv, subjectOverride, bodyOverride) => {
     const script = scriptFor(c);
     const res = await api.sendEmails({
-      ids: [c.id], subject: script.subject, body: script.body,
+      ids: [c.id], subject: subjectOverride ?? script.subject, body: bodyOverride ?? script.body,
       advance: adv, colKey, kind: script.kind,
     });
     merge(res.companies);
     return res;
   };
 
-  const sendCell = guard(async (c, r) => {
-    const res = await sendSingle(c, r.colKey, false);
+  const sendCell = guard(async (c, r, subject, body) => {
+    const res = await sendSingle(c, r.colKey, false, subject, body);
     flash(`Sent to ${r.email}`);
     return res;      // truthy on success, so the preview knows to close
   });
